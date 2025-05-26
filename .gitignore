@@ -1,0 +1,13 @@
+node_modules/
+.env
+dist/
+*.log
+
+# Editor/OS stuff
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Debug/test artifacts
+*.tmp
+*.bak

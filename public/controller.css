@@ -1,0 +1,340 @@
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #1b355a;
+  color: #333;
+}
+
+header {
+  background-color: #0078d4;
+  color: white;
+  padding: 10px 20px;
+  font-size: 1.0em;
+  text-align: center;
+}
+
+#nodes-container {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+}
+
+.node {
+  background-color: rgb(220, 219, 228);
+  border: 1px solid #03000c;
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+}
+
+.connecting-node {
+  background-color: rgb(99, 98, 104);
+}
+
+.connecting-node-status {
+  color: rgb(245, 54, 54);
+}
+
+.node.on {
+  background-color: rgb(255, 224, 224);
+}
+
+.node.off {
+  background-color: rgb(211, 211, 211);
+
+}
+
+.on {
+  background-color: lightgoldenrodyellow;
+}
+
+.off {
+  background-color: darkgrey;
+}
+
+.node-buttons {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+  background-color: rgb(250, 250, 250);
+  border: 1px solid #0f0f0f;
+  border-radius: 4px;
+  padding: 15px;
+}
+
+.node-button {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+.node-button.control {
+  background-color: #e6f7ff;
+  width: fit-content;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px 10px;
+}
+
+.node-button.attribute {
+  background-color: #b2c6d2;
+  font-size: 0.65em;
+}
+
+.node-button.attributetimingout {
+  background-color: #d7baba;
+}
+
+.node-button.control:hover {
+  background-color: #84b4ca;
+}
+
+.node-button.info {
+  background-color: #f1f1f1;
+}
+
+.node-button.info:hover {
+  background-color: #e1e1e1;
+}
+
+.node-button.detail {
+  background-color: #fff3e6;
+}
+
+.node-button.detail:hover {
+  background-color: #ffe6cc;
+}
+
+#splitter {
+  height: 5px;
+  background-color: #ccc;
+  cursor: ns-resize;
+  user-select: none;
+}
+
+#lower-container {
+  display: flex;
+  flex-direction: column;
+  background-color: #979cb7;
+  height: 250px;
+  min-height: 10px;
+}
+
+#inputs-container {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-top: 1px solid #ddd;
+  align-items: flex-end;
+  min-height: 40px;
+}
+
+.input-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.input-form label {
+  font-weight: bold;
+  font-size: 0.75em;
+}
+
+.input-form input,
+.input-form select {
+  padding: 8px;
+  font-family: monospace;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  height: 18px;
+
+}
+
+.matter-command {
+  flex: 5;
+}
+
+#console-container {
+  height: 150px;
+  padding: 10px;
+  background-color: #aeb8c3;
+  border-top: 1px solid #ddd;
+  overflow: hidden;
+}
+
+#console {
+  height: 100%;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+}
+
+#console span {
+  display: block;
+}
+
+#console .sent {
+  color: #0056b3;
+}
+
+#console .received {
+  color: #333;
+}
+
+#console .error {
+  color: #d32f2f;
+}
+
+#clear-console {
+  padding: 8px 10px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+  height: 34px;
+}
+
+#clear-console:hover {
+  background-color: #218838;
+}
+
+#log-level-select {
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9em;
+  height: 34px;
+  background-color: #fff;
+  cursor: pointer;
+  line-height: 1.2;
+  width: 100px;
+}
+
+#log-level-select:hover {
+  border-color: #999;
+}
+
+.popup {
+  position: relative;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  max-width: 1000px;
+  max-height: 80vh;
+  overflow: auto;
+  resize: both;
+  z-index: 1000;
+  min-width: 200px;
+  min-height: 150px;
+  transform: none;
+  top: auto;
+  left: auto;
+}
+
+.popup-title {
+  background-color: #f5f5f5;
+  padding: 10px;
+  margin: -20px -20px 20px -20px;
+  border-bottom: 1px solid #ddd;
+  font-weight: bold;
+  text-align: center;
+}
+
+.popup pre {
+  margin: 0;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.popup button {
+  margin-top: 10px;
+  padding: 5px 10px;
+  background-color: #0078d4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.popup button:hover {
+  background-color: #005bb5;
+}
+
+.popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.node-name {
+  cursor: pointer;
+}
+
+.details-name {
+  cursor: pointer;
+}
+
+.node-name:hover {
+  text-decoration: underline;
+}
+
+.details-name:hover {
+  text-decoration: underline;
+}
+
+.node-name-input {
+  font-weight: bold;
+  border: 1px solid #ccc;
+  padding: 2px 4px;
+  margin: 0;
+  font-size: inherit;
+  width: 100%;
+}
+
+.endpoint-container {
+  border: 1px solid #0d0202;
+  padding: 10px;
+  margin: 5px 0;
+  border-radius: 4px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.endpoint-title {
+  font-size: 14px;
+  text-align: center;
+  margin: 0 0 8px 0;
+  padding: 0;
+}
+
+.node-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}

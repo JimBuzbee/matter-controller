@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@matter/nodejs-shell": "^0.14.0-alpha"
+  },
+    "scripts": {
+        "webshell": "npm run bundle-shell && node public/app.cjs --webSocketInterface --webServer",
+        "bundle-shell": "esbuild node_modules/@matter/nodejs-shell/src/app.ts --bundle --platform=node --conditions=esbuild --external:@stoprocent/noble --external:@stoprocent/bluetooth-hci-socket --sourcemap --minify --keep-names --outfile=public/app.cjs"
+    }
+}

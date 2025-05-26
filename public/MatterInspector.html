@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<!--
+* @license
+* Copyright 2022-2025 Matter.js Authors
+* SPDX-License-Identifier: Apache-2.0
+
+-->
+<html lang="en">
+
+<head>
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matter Shell Dashboard</title>
+    <link rel="stylesheet" href="controller.css">
+    <script src="controller-library.js"></script>
+</head>
+
+<body>
+    <header>matter.js Web Shell</header>
+    <div id="nodes-container"></div>
+    <div id="splitter"></div>
+    <div id="lower-container">
+        <div id="inputs-container">
+            <button id="clear-console" onclick="domElements.console.innerHTML = ''">Clear Console</button>
+            <div class="input-form input-select-narrow">
+                <label for="log-level-select">Log Level</label>
+                <select id="log-level-select">
+                    <option value="" selected disabled>Select a level...</option>
+                    <option value="info">info</option>
+                    <option value="warn">warn</option>
+                    <option value="error">error</option>
+                    <option value="fatal">fatal</option>
+                </select>
+            </div>
+            <div class="input-form matter-command">
+                <label for="matter-input">Matter Command</label>
+                <input id="matter-input" type="text" placeholder="Command or Help...">
+            </div>
+            <div class="input-form">
+                <label for="pairing-input">Commission Node</label>
+                <input id="pairing-input" placeholder="Pairing code or Help...">
+            </div>
+            <div class="input-form">
+                <label for="unpair-input">Unpair Node</label>
+                <input id="unpair-input" type="number" placeholder="Node ID...">
+            </div>
+        </div>
+        <div id="console-container">
+            <div id="console"><span>Console loaded...</span></div>
+        </div>
+    </div>
+
+    <script>
+        const WS_STATES = {
+            CONNECTING: WebSocket.CONNECTING,
+            OPEN: WebSocket.OPEN,
+            CLOSING: WebSocket.CLOSING,
+            CLOSED: WebSocket.CLOSED
+        };
+
+        const UI_CONSTANTS = {
+            DEFAULT_PORT: 8081,
+            MIN_NODES_HEIGHT: 10,
+            MIN_LOWER_HEIGHT: 2,
+            DEBOUNCE_DELAY: 10, // ms
+            RECONNECT_DELAY: 1000, // Initial delay in ms
+            MAX_RECONNECT_DELAY: 30000 // Max delay in ms
+        };
+
+        const domElements = {
+            nodesContainer: document.getElementById('nodes-container'),
+            console: document.getElementById('console'),
+            matterInput: document.getElementById('matter-input'),
+            pairingInput: document.getElementById('pairing-input'),
+            unpairInput: document.getElementById('unpair-input'),
+            splitter: document.getElementById('splitter'),
+            lowerContainer: document.getElementById('lower-container'),
+            logLevelSelect: document.getElementById('log-level-select'),
+            inputsContainer: document.getElementById('inputs-container'),
+            consoleContainer: document.getElementById('console-container')
+        };
+
+        let commandHistory = JSON.parse(localStorage.getItem('commandHistory')) || [];
+        let historyIndex = -1;
+        let helpCollection = null;
+        let isUpdatingLogLevel = false;
+        let isDragging = false;
+        let intentionallyClosed = false;
+        let ws = null;
+        let reconnectAttempts = 0;
+        let nodeInitializing = false;
+        let lastColorTime = Date.now();
+        let regExProcessing = [];
+        let nodeLogs = new Map();
+        let originalLogLevel = "error";
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.hostname || 'localhost';
+        const defaultPort = window.location.port || UI_CONSTANTS.DEFAULT_PORT;
+        const wsUrl = `${protocol}//${host}:${defaultPort}`;
+
+        //----------------------------------------------------------------------------------
+        let intervalID = setInterval(housekeeping, 10 * 1000);
+
+        function housekeeping() {
+            const attributes = document.querySelectorAll('.attribute');
+            const MINUTES_TO_TIMEOUT = 5;
+            attributes.forEach(attribute => {
+                let now = Date.now();
+                let last = attribute.lastUpdate;
+                if (now - last > (MINUTES_TO_TIMEOUT * 60 * 1000)) attribute.remove(); // Remove nodes that have not been updated in a while 
+                else if (now - last > ((MINUTES_TO_TIMEOUT - 1) * 60 * 1000)) attribute.classList.add("attributetimingout");
+            });
+            // could send commands to read attributes of devices such as onOff state, etc. in case we missed a status update while offline
+        }
+        //----------------------------------------------------------------------------------
+        function toggleEndpoints(nodeId) {
+            const node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
+            const endpointContainers = node.querySelectorAll('.cluster-container');
+            endpointContainers.forEach(container => container.style.display = container.style.display === 'none' ? 'block' : 'none');
+        }
+        //----------------------------------------------------------------------------------
+        function appendOutput(outputArea, text, type = 'received') {
+            let trimmed = text.slice(0, 3000);
+            text = trimmed.length > 3000 ? trimmed + "..." : trimmed;
+            const shouldScroll = outputArea.scrollTop + outputArea.clientHeight >= outputArea.scrollHeight - 5;
+            const lines = text.split('\n');
+            lines.forEach(line => {
+                const span = document.createElement('span');
+                span.textContent = line;
+                span.className = type;
+                outputArea.appendChild(span);
+            });
+            if (shouldScroll) outputArea.scrollTop = outputArea.scrollHeight;
+        }
+        //----------------------------------------------------------------------------------
+        function showPopup(nodeId, content, type) {
+            const overlay = document.createElement('div');
+            overlay.className = 'popup-overlay';
+
+            const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
+            const displayName = aliases[nodeId] ? aliases[nodeId] : `Cluster`;
+
+            const popup = document.createElement('div');
+            popup.className = 'popup'; // Ensure this class has appropriate styling
+
+            const titleDiv = document.createElement('div');
+            titleDiv.className = 'popup-title';
+            let titleText = type === 'help' ? "Help" : type === 'json' ? `${displayName} Info` : (type === 'Attributes') ? `${displayName} Attributes` : `${displayName} Details`;
+            titleDiv.textContent = titleText;
+            popup.appendChild(titleDiv);
+
+            const preElement = document.createElement('pre');
+            // Apply styles via CSS class for .popup pre for better management:
+            // .popup pre {
+            //   max-height: 70vh;
+            //   overflow: auto;
+            //   white-space: pre-wrap;
+            //   word-break: break-all; /* or break-word */
+            //   background-color: #f5f5f5; /* Indicate it's a text area */
+            //   padding: 10px;
+            // }
+            popup.appendChild(preElement);
+
+            const actionsDiv = document.createElement('div'); // For buttons like "Show All", "Download"
+            actionsDiv.className = 'popup-actions';
+            popup.appendChild(actionsDiv);
+
+            const MAX_INITIAL_DISPLAY_LENGTH = 5000; // Adjust as needed (e.g., 15k-30k)
+            let fullContentToDisplay = content; // This will hold the (potentially processed) full content
+
+            if (type === 'json') {
+                try {
+                    console.time("JSONProcessingForPopup");
+                    const jsonObj = JSON.parse(content.trim());
+                    fullContentToDisplay = JSON.stringify(jsonObj, null, 2);
+                    console.timeEnd("JSONProcessingForPopup");
+                } catch (e) {
+                    console.error("Error processing JSON content:", e);
+                    fullContentToDisplay = `Error parsing JSON. Raw content preview (may be truncated):\n\n${content.substring(0, MAX_INITIAL_DISPLAY_LENGTH)}`;
+                }
+            }
+
+            if (fullContentToDisplay.length > MAX_INITIAL_DISPLAY_LENGTH) {
+                preElement.textContent = fullContentToDisplay.substring(0, MAX_INITIAL_DISPLAY_LENGTH) +
+                    `\n\n... (Content truncated. Total length: ${fullContentToDisplay.length} characters) ...`;
+
+                const showAllButton = document.createElement('button');
+                showAllButton.textContent = 'Load Full Content';
+                showAllButton.onclick = () => {
+                    preElement.textContent = fullContentToDisplay;
+                    showAllButton.remove(); // Remove button after loading
+                    // Potentially remove other buttons like download if they become irrelevant
+                };
+                actionsDiv.appendChild(showAllButton);
+
+                const downloadButton = document.createElement('button');
+                downloadButton.textContent = 'Download Full Content';
+                downloadButton.onclick = () => {
+                    const blob = new Blob([fullContentToDisplay], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${displayName}_${type}.txt`; // Or .json if appropriate
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                };
+                actionsDiv.appendChild(downloadButton);
+            } else {
+                preElement.textContent = fullContentToDisplay;
+            }
+
+            const closeBtnElement = document.createElement('button');
+            closeBtnElement.className = 'close-btn';
+            closeBtnElement.textContent = 'Close';
+            actionsDiv.appendChild(closeBtnElement);
+
+            overlay.appendChild(popup);
+            document.body.appendChild(overlay);
+
+            let escapeHandler;
+
+            const closePopup = () => {
+                if (document.body.contains(overlay)) {
+                    document.body.removeChild(overlay);
+                }
+                if (escapeHandler) { // Check if listener was added
+                    document.removeEventListener('keydown', escapeHandler);
+                }
+            };
+
+            closeBtnElement.addEventListener('click', closePopup);
+            overlay.addEventListener('click', (event) => { if (event.target === overlay) closePopup(); });
+
+            escapeHandler = (event) => { if (event.key === 'Escape') closePopup(); };
+            document.addEventListener('keydown', escapeHandler);
+
+            popup.tabIndex = -1;
+            popup.focus();
+        }
+        //----------------------------------------------------------------------------------
+        function removeNode(nodeId) {
+            const node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
+            if (node) node.remove();
+            localStorage.removeItem(nodeId);
+        }
+        //----------------------------------------------------------------------------------
+        function setupForNodeList(nodeId) {
+            onNodeList(nodeId, ((nodeId, raw) => { showPopup(nodeId, raw, 'json') }));
+            sendNodeList(nodeId);
+        }
+        //----------------------------------------------------------------------------------
+        function setupForNodeLogCollection(nodeId) {
+            nodeLogCollection(nodeId, (nodeId, logData) => {  nodeLogs.set(nodeId, logData); showPopup(nodeId, logData, "text")});
+        }
+        //----------------------------------------------------------------------------------
+        function createOrUpdateNode(nodeId, status, details) {
+            let node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
+            const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
+            const displayName = aliases[nodeId] ? aliases[nodeId] : `Node ${nodeId}`;
+            const detailsName = aliases[nodeId + "/details"] ? aliases[nodeId + "/details"] : `${details}`;
+            let newNode = false;
+
+            if (!node) {
+                node = document.createElement('div');
+                node.className = 'node';
+                newNode = true;
+                domElements.nodesContainer.appendChild(node);
+                node.dataset.nodeId = nodeId; // FIXME - why this and id
+                node.id = nodeId;
+            }
+            node.innerHTML = `
+                <div class="node-content">
+                <strong class="node-name" data-node-id="${nodeId}">${displayName}</strong><br>
+                <small><span class="connecting-node-status" id="${nodeId}/status">${status}</span></small><br>
+                <small class="details-name" data-node-id="${nodeId}/details">${detailsName}</small><br>
+                </div>
+                <div class="node-buttons">
+                <button class="node-button info" onclick="setupForNodeList('${nodeId}')">Info</button>
+                <button class="node-button detail" onclick="setupForNodeLogCollection('${nodeId}')">Query</button>
+                <button class="node-button toggle-endpoints" onclick="toggleEndpoints('${nodeId}')">EndPts</button>
+                </div>`;
+
+            if (status !== "Connected") node.classList.add("connecting-node");  // Start with connecting node until we know the status  
+
+            // Sort nodes by nodeId and then Re-append in sorted order
+            const nodes = Array.from(domElements.nodesContainer.querySelectorAll('.node'));
+            nodes.sort((a, b) => { return Number(a.dataset.nodeId) - Number(b.dataset.nodeId) });
+            nodes.forEach(node => domElements.nodesContainer.appendChild(node));
+
+            // we really shouldn't have to do this on an update - elements will not get created if they already exist so no harm
+            // Grab all the command and/or cluster definitions from local storage and add to the node/endpoint 
+            let storedConfig = JSON.parse(localStorage.getItem(`controlButtons-${nodeId}`));
+            if (storedConfig) storedConfig.forEach((config) => addClusterControlElement(nodeId, config.endpoint, config.action, config.clusterNumber));
+
+            storedConfig = JSON.parse(localStorage.getItem(`clusterButtons-${nodeId}`));
+            if (storedConfig) storedConfig.forEach((config) => addEndpointClusterButton(nodeId, config.endpoint, config.cluster, config.clusterNumber))
+
+            if (status === "Connected") {
+                nodeSubscribe(nodeId);
+                node.classList.remove("connecting-node");
+                node.querySelector(`[id="${nodeId}/status"]`).classList.remove("connecting-node-status");
+            }
+        }
+        //----------------------------------------------------------------------------------
+        function deleteLocalStorageItems(regex) {
+            const keysToDelete = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (regex.test(key)) keysToDelete.push(key);
+            }
+            keysToDelete.forEach(key => localStorage.removeItem(key));
+        }
+        //----------------------------------------------------------------------------------
+        function deleteAlias(nodeId) {
+            const storedAliases = JSON.parse(localStorage.getItem("nodeAliases")) || {};
+            if (storedAliases[nodeId]) {
+                delete storedAliases[nodeId];
+                localStorage.setItem("nodeAliases", JSON.stringify(storedAliases));
+            }
+        }
+        //----------------------------------------------------------------------------------
+        function createEndpointContainer(nodeId, endpoint, type, containerClass, deviceType = "") {
+            const container = document.createElement('div');
+            container.className = `endpoint-container ${containerClass}-${endpoint} ${type}-container `;
+            container.id = `${nodeId}/${endpoint}`;
+
+            const title = document.createElement('h3');
+            title.textContent = `Endpoint ${endpoint} ${type === 'control' ? 'Commands' : ''}`;
+            title.className = 'endpoint-title';
+
+            const deviceTypeE = document.createElement('h4');
+            deviceTypeE.textContent = deviceType;
+            deviceTypeE.id = `${nodeId}/${endpoint}/${(type === "cluster") ? "deviceType" : "commandType"}`;
+            deviceTypeE.className = 'endpoint-title';
+
+            const buttonsWrapper = document.createElement('div');
+            buttonsWrapper.className = 'node-buttons';
+
+            container.appendChild(title);
+            container.appendChild(deviceTypeE);
+            container.appendChild(buttonsWrapper);
+
+            return container;
+        }
+        //----------------------------------------------------------------------------------
+        function createColorPicker(nodeId, endpoint) {
+
+            if (document.getElementById(`${nodeId}/${endpoint}/colorselect`)) return null;
+
+            const input = document.createElement('input');
+            input.type = "color";
+            input.className = "control";
+            input.value = "#ffffff";
+            input.hue = 128;
+            input.sat = 128;
+            input.val = 200; // give a reasonable default
+            input.id = `${nodeId}/${endpoint}/colorselect`;
+
+            input.addEventListener("input", function () {
+                if (Date.now() - lastColorTime < 250) return; // don't process too quickly - locked up my Inovelli switch
+                lastColorTime = Date.now();
+                const { hue, saturation, value } = hexRGBToHsv(input.value);
+                input.hue = hue;
+                input.sat = saturation;
+                input.val = value;
+
+                setHueSaturation(nodeId, endpoint, hue, saturation);
+            });
+
+            readHue(nodeId, endpoint, (value) => {
+                const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
+                if (color) {
+                    color.hue = value;
+                    color.value = HsvToRgbHex(color.hue, color.sat, color.val);
+                }
+                return true;
+            });
+
+            onCurrentHueChanged(nodeId, endpoint, (value) => {
+                const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
+                if (color) {
+                    color.hue = value;
+                    color.value = HsvToRgbHex(color.hue, color.sat, color.val);
+                }
+            });
+
+            readCurrentSaturation(nodeId, endpoint, (value) => {
+                const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
+                if (color) {
+                    color.sat = value;
+                    color.value = HsvToRgbHex(color.hue, color.sat, color.val);
+                }
+                return true;
+            });
+
+            onCurrentSaturationChanged(nodeId, endpoint, (value) => {
+                const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
+                if (color) {
+                    color.sat = value;
+                    color.value = HsvToRgbHex(color.hue, color.sat, color.val);
+                }
+            });
+
+            return input;
+        }
+        //----------------------------------------------------------------------------------
+        function createColorLabel(nodeId, endpoint) {
+            const label = document.createElement("label");
+            label.textContent = "Select Color: ";
+            label.htmlFor = `${nodeId}/${endpoint}/colorselect`;
+            return label;
+        }
+        //----------------------------------------------------------------------------------
+        function createLevelSlider(nodeId, endpoint) {
+
+            if (document.getElementById(`${nodeId}/${endpoint}/currentLevel`)) return null;
+
+            const slider = document.createElement('input');
+            slider.type = "range";
+            slider.min = "1";
+            slider.max = "254";
+            slider.id = `${nodeId}/${endpoint}/currentLevel`;
+            slider.className = 'node-button control';
+
+            readCurrentLevel(nodeId, endpoint, (value) => {
+                slider.value = value;
+                const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
+                if (color) color.val = value;
+                return true;
+            });
+
+            onCurrentLevelChanged(nodeId, endpoint, (value) => {
+                const slider = document.getElementById(`${nodeId}/${endpoint}/currentLevel`);
+                slider.value = value;
+                const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
+                if (color) color.val = value;
+            });
+
+            slider.addEventListener("mouseup", function () {
+                setLevel(nodeId, endpoint, slider.value);
+            });
+
+            return slider;
+        }
+        //----------------------------------------------------------------------------------
+        function createButton(nodeId, endpoint, clusterNumber, commandOrCluster, type) {
+
+            const id = (type === 'control') ? `${nodeId}/${endpoint}/${type}/${commandOrCluster}` : `${nodeId}/${endpoint}/${clusterNumber}`;
+
+            if (document.getElementById(id)) { return null; }
+
+            const button = document.createElement('input');
+            button.type = "button";
+            button.value = commandOrCluster;
+            button.className = 'node-button control';
+            button.id = id;
+
+            // should be a better way to do this
+            if (!commandOrCluster.includes('Unknown cluster')) {
+                if (type === "cluster") {
+                    button.onclick = () => readClusterAttributes(nodeId, endpoint, commandOrCluster, (id, details) => showPopup(id, details, "Attributes"));
+                } else {
+                    // FIXME - Should have a library call for this rather than directly calling sendCommand
+                    button.onclick = () => sendCommand(`commands onoff ${commandOrCluster} ${nodeId} ${endpoint}`);
+                }
+            }
+            return button;
+        }
+        //----------------------------------------------------------------------------------
+        function updateAttributeDisplay(nodeId, endpoint, cluster, attribute, value) {
+
+            let attr = document.getElementById(`${nodeId}/${endpoint}/${cluster}/${attribute}`);
+            const clusterElement = document.getElementById(`${nodeId}/${endpoint}/${cluster}`);
+
+            if (!clusterElement) return;
+
+            // if we don't already have this attribute display, create it
+            if (!attr) {
+                attr = document.createElement('li');
+                attr.className = 'node-button control attribute'; // time-limited display of attribute under cluster name
+                attr.id = `${nodeId}/${endpoint}/${cluster}/${attribute}`;
+                clusterElement.after(attr);
+            }
+            attr.lastUpdate = Date.now();
+            attr.classList.remove("attributetimingout");
+            attr.textContent = truncate(attribute, 12) + " " + value;
+
+            return;
+        }
+        //----------------------------------------------------------------------------------
+        function storeButtonConfig(type, nodeId, endpoint, clusterNumber, label, actionOrClusterName = label) {
+            const storageKey = `${type}Buttons-${nodeId}`;
+            let storedButtons = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+            if (storedButtons.some(btn => btn.endpoint === endpoint && btn.label === label && (type === 'control' ? btn.action === actionOrClusterName : btn.cluster === actionOrClusterName))) return;
+
+            storedButtons.push({ endpoint, label, clusterNumber, ...(type === 'control' ? { action: actionOrClusterName } : { cluster: actionOrClusterName }) });
+            localStorage.setItem(storageKey, JSON.stringify(storedButtons));
+        }
+        //----------------------------------------------------------------------------------
+        function addEndpointClusterButton(nodeId, endpoint, clusterName, clusterNumber) {
+            const node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
+            const containerClass = 'endpoint-container';
+            let endpointContainer = node.querySelector(`.${containerClass}-${endpoint}`);
+            const type = "cluster"
+
+            // if we are being asked to use an endpoint container that doesn't exist, create it
+            if (!endpointContainer) {
+                const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
+                const deviceType = aliases[`${nodeId}/${endpoint}/deviceType`] || '';
+
+                endpointContainer = createEndpointContainer(nodeId, endpoint, type, containerClass, deviceType);
+                node.appendChild(endpointContainer);
+            }
+
+            const inputsWrapper = endpointContainer.querySelector('.node-buttons');
+            const inputElement = createButton(nodeId, endpoint, clusterNumber, clusterName, type);
+
+            // if the button already exists, don't add it again
+            if (!inputElement) return;
+
+            inputsWrapper.appendChild(inputElement);
+
+            storeButtonConfig(type, nodeId, endpoint, clusterNumber, clusterName);
+        }
+        //----------------------------------------------------------------------------------
+        function addClusterControlElement(nodeId, endpoint, action, clusterNumber) {
+            const node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
+            const containerClass = 'endpoint-control-container';
+            let endpointContainer = node.querySelector(`.${containerClass}-${endpoint}`);
+            const type = "control"
+
+            // if we are being asked to use an endpoint container that doesn't exist, create it
+            if (!endpointContainer) {
+                const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
+                const deviceType = aliases[`${nodeId}/${endpoint}/commandType`] || '';
+
+                endpointContainer = createEndpointContainer(nodeId, endpoint, type, containerClass, deviceType);
+
+                // first look for other endpoint containers 
+                let position = node.getElementsByClassName('control-container')[0];
+                // if we didn't find one, get the buttons element
+                if (!position) position = node.getElementsByClassName('node-buttons')[0];
+                position.after(endpointContainer);
+            }
+
+            const inputsWrapper = endpointContainer.querySelector('.node-buttons');
+
+            let inputElement;
+
+            if (action === "movetocolortemperature") {
+                inputElement = createColorPicker(nodeId, endpoint);
+                if (inputElement) inputsWrapper.appendChild(createColorLabel(nodeId, endpoint));
+            } else if (action == "movetolevel") inputElement = createLevelSlider(nodeId, endpoint);
+            else {
+                // only need to do this once although action could be on, off, toggle
+                if (action === "on") {
+                    // set the current state (on or off)
+                    readOnOff(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true"); });
+
+                    // register to get callback whenever it changes
+                    onOnOffChanged(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true") });
+                }
+                // assume button, but if support is added for different types - will need to update here
+                inputElement = createButton(nodeId, endpoint, clusterNumber, action, type); // on, off, toggle
+            }
+
+            // elmement wasn't created so probably already exists, bail out - FIXME could we determine this earlier?
+            if (!inputElement) return;
+
+            inputsWrapper.appendChild(inputElement);
+
+            storeButtonConfig(type, nodeId, endpoint, clusterNumber, action, action);
+        }
+        //----------------------------------------------------------------------------------
+        function nodeLogCollection(nodeId, callback) {
+
+            const logData = nodeLogs.get(nodeId); // see if we have already collected this node's log data
+            if (logData) {
+                nodeInitializing = false;
+                callback(nodeId, logData);
+                return;
+            } 
+            // keep track of log level so we can restore it later
+            originalLogLevel = domElements.logLevelSelect.value || "error";
+            configLoglevel("info"); // need to have info level to get the log lines we want
+
+            setTimeout(() => nodeLog(nodeId, callback), 500);  // wait before sending to give loglevel time to change 
+        }
+        //----------------------------------------------------------------------------------
+        function updateLogLevelUI(level) {
+            isUpdatingLogLevel = true;  // set global flag to prevent looping
+            domElements.logLevelSelect.value = level;
+            isUpdatingLogLevel = false;
+        }
+        //----------------------------------------------------------------------------------
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+        //----------------------------------------------------------------------------------
+        function hexRGBToHsv(hex) {
+            // Remove '#' if present
+            hex = hex.startsWith('#') ? hex.slice(1) : hex;
+
+            // Convert hex to RGB (0-255 range)
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const delta = max - min;
+
+            let h, s, v;
+
+            // Hue calculation (0-254 range)
+            if (delta === 0) {
+                h = 0;
+            } else if (max === r) {
+                h = 42.33 * (((g - b) / delta) % 6); // (254 / 6) = 42.33
+            } else if (max === g) {
+                h = 42.33 * ((b - r) / delta + 2);
+            } else { // max === b
+                h = 42.33 * ((r - g) / delta + 4);
+            }
+
+            if (h < 0) h += 254;
+
+            // Saturation calculation (0-254 range)
+            s = max === 0 ? 0 : (delta / max) * 254;
+
+            // Value calculation (0-254 range)
+            v = (max / 255) * 254;
+
+            return { hue: Math.round(h), saturation: Math.round(s), value: Math.round(v) };
+        }
+        //----------------------------------------------------------------------------------
+        function HsvToRgbHex(h, s, v) {
+            // Ensure HSV values are in the 0-254 range
+            h = h % 254;
+            s = Math.min(Math.max(s, 0), 254);
+            v = Math.min(Math.max(v, 0), 254);
+
+            // Convert to 0-1 range for calculations
+            const hNormalized = h / 42.33; // (254 / 6) = 42.33
+            const sNormalized = s / 254;
+            const vNormalized = v / 254;
+
+            // Compute Chroma, H', X, and m
+            const c = vNormalized * sNormalized;
+            const hPrime = hNormalized;
+            const x = c * (1 - Math.abs(hPrime % 2 - 1));
+            const m = vNormalized - c;
+
+            let rPrime, gPrime, bPrime;
+
+            if (hPrime < 1) {
+                [rPrime, gPrime, bPrime] = [c, x, 0];
+            } else if (hPrime < 2) {
+                [rPrime, gPrime, bPrime] = [x, c, 0];
+            } else if (hPrime < 3) {
+                [rPrime, gPrime, bPrime] = [0, c, x];
+            } else if (hPrime < 4) {
+                [rPrime, gPrime, bPrime] = [0, x, c];
+            } else if (hPrime < 5) {
+                [rPrime, gPrime, bPrime] = [x, 0, c];
+            } else {
+                [rPrime, gPrime, bPrime] = [c, 0, x];
+            }
+
+            // Convert back to 0-255 RGB range
+            const r = Math.round((rPrime + m) * 255);
+            const g = Math.round((gPrime + m) * 255);
+            const b = Math.round((bPrime + m) * 255);
+
+            // Convert to hex
+            const toHex = (n) => n.toString(16).padStart(2, "0").toUpperCase();
+
+            return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+        }
+        //----------------------------------------------------------------------------------
+        function addObjectToArray(array, newObject) {
+            const exists = array.some(obj => { return obj.expression.source === newObject.expression.source && obj.expression.flags === newObject.expression.flags; });
+            if (!exists) array.push(newObject);
+        }
+        //----------------------------------------------------------------------------------
+        function processLogdata(nodeId, logData) {
+            nodeLogs.set(nodeId, logData); // save the log text
+            configLoglevel(originalLogLevel);
+            let currentNode = nodeId;
+            let currentEndpoint = -1;
+            let currentClusterNumber = -1;
+
+            if (logData === null || logData === undefined) return;
+            logData.split('\n').forEach(line => {
+
+                matches = line.match(/ MA-[\w*]+ endpoint#: (\d+) type: MA-([\w*]+) \(([^)]+)\)/);
+                if (matches) { currentEndpoint = matches[1]; currentEndpointType = matches[2]; }
+
+                // for example:  LevelControl id: 0x8 rev: 5
+                matches = line.match(/^ {8,9}(.+?) id: (0x[0-9a-fA-F]+) rev: (\d+)/);
+                if (matches) {
+                    const clusterName = matches[1].replace(/\*/g, '');
+                    currentClusterNumber = +matches[2]; // comes as hex so have to explicitly convert to number
+                    addEndpointClusterButton(nodeId, currentEndpoint, clusterName, currentClusterNumber);
+                }
+
+                // commands that we know how to create a UI for - potentially could be more
+                matches = line.match(/( toggle$| on$| off$| moveToLevel$| moveToColorTemperature$)/);
+                if (matches) addClusterControlElement(currentNode, currentEndpoint, matches[1].toLowerCase().trim(), currentClusterNumber);
+
+                // get the device type list for the endpoint so we can didplay names
+                matches = line.match(/deviceTypeList id: 0x0 val: ((\{.*?\})(?:\s*\{.*?\})*)/);
+                if (matches) {
+                    const deviceTypeList = line.match(/{[^{}]*}/g);
+                    if (deviceTypeList.length > 0) {
+                        let label = "";
+                        deviceTypeList.forEach((device) => {
+                            let id = device.match(/deviceType: (\d+)/);
+                            id = id[1];
+                            if (idToDevice[id]) label += idToDevice[id] + " ";
+                            else label += "Unknown ";
+                        });
+
+                        //  update the label for the endpoint's device type
+                        let labelSlot = document.getElementById(`${currentNode}/${currentEndpoint}/deviceType`);
+                        if (labelSlot) labelSlot.textContent = label;
+
+                        // there may also be a command container
+                        labelSlot = document.getElementById(`${currentNode}/${currentEndpoint}/commandType`);
+                        if (labelSlot) labelSlot.textContent = label;
+
+                        // store the device types for the endpoint in localStorage
+                        const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
+                        const updatedAliases = { ...aliases };
+                        updatedAliases[`${currentNode}/${currentEndpoint}/deviceType`] = label;
+                        updatedAliases[`${currentNode}/${currentEndpoint}/commandType`] = label;
+                        localStorage.setItem('nodeAliases', JSON.stringify(updatedAliases));
+                    }
+                }
+            }) // end for each line in log data
+        }
+        //----------------------------------------------------------------------------------
+        function setupWebSocket() {
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                regExProcessing = [];
+                appendOutput(domElements.console, `Connected to WebSocket at ${wsUrl}\n`);
+
+                reconnectAttempts = 0;
+                intentionallyClosed = false;
+
+                commandInvoked((callback) => { ; });
+
+                // "catch-all" for attribute changes for example when asynchronuous changes happen to a sensor
+                // For example: 17148967204303126331: Attribute undefined/3/1029/measuredValue changed to 1340  
+                onAttributeChanged((nodeId, endpoint, cluster, attribute, value) => updateAttributeDisplay(nodeId, endpoint, cluster, attribute, value));
+
+                // stateInformationCallback Node 352067654833022968 disconnected
+                onStateInformationCallback((nodeId, state) => {
+                    if (state === "decommissioned") {
+                        removeNode(nodeId);
+                        deleteLocalStorageItems(new RegExp(`${nodeId}`));
+                        deleteAlias(nodeId);
+                        domElements.unpairInput.value = '';
+                        regExProcessing = regExProcessing.filter(element => element.nodeId !== nodeId);
+                    } else if (state !== "disconnected") nodeStatus(nodeId);
+                });
+      
+                onNodeStatusCallback((nodeId, status, details) => {
+                    createOrUpdateNode(nodeId, status, details);
+                    if ((status === "Connected") && nodeInitializing)
+                        nodeLogCollection(nodeId, (nodeId, logData) => { processLogdata(nodeId, logData);  });
+                });
+
+                readLoglevelOnLoglevelchanged((level) => updateLogLevelUI(level.toLowerCase().trim()) );
+
+                initializeNodes(); // aka nodes connect
+            };
+            //----------------------------------------------------------------------------------
+            ws.onmessage = (event) => {
+                if (typeof event.data === 'string') {
+                    let text = event.data;
+
+                    appendOutput(domElements.console, `Received: ${text}`, text.toLowerCase().includes('error') ? 'error' : 'received');
+
+                    // for all of the regex expressions check and process if there is a match
+                    for (const element of regExProcessing) {
+                        const results = text.match(element.expression);
+                        if (results) {
+                            const shouldRemove = element.callback(results, event.data);
+                            if (shouldRemove) { regExProcessing.splice(regExProcessing.indexOf(element), 1); }
+                        }
+                    }
+                    // FIXME - should probably be in the library with an associated callback when "Done" seen.
+                    // if we are collecting help - this is fraught with possibilities of false-match for a help line
+                    //  while collecting help messages, we just take anything from the socket until we see "^Done."
+                    if (helpCollection) {
+                        if (text.match(/^Done./)) {
+                            const helpText = helpCollection.join('\n');
+                            if (helpText) showPopup("", "\n" + helpText, 'help');
+                            helpCollection = null;
+                        } else helpCollection.push(text);
+                        return;
+                    }
+                }
+            };
+            //----------------------------------------------------------------------------------
+            ws.onerror = () => appendOutput(domElements.console, 'WebSocket error occurred\n', 'error');
+            //----------------------------------------------------------------------------------
+            ws.onclose = (event) => {
+                const nodes = Array.from(domElements.nodesContainer.querySelectorAll('.node'));
+                nodes.forEach(node => createOrUpdateNode(node.dataset.nodeId, "Disconnected", node.dataset.details));
+
+                appendOutput(domElements.console, `Disconnected (code: ${event.code}, reason: ${event.reason})\n`, 'error');
+                if (!intentionallyClosed) {
+                    scheduleReconnect(); // Only reconnect if not intentional
+                }
+            };
+        }
+        //----------------------------------------------------------------------------------
+        function scheduleReconnect() {
+            if (ws && ws.readyState !== WS_STATES.CLOSED) return;
+            const delay = Math.min(UI_CONSTANTS.RECONNECT_DELAY * Math.pow(2, reconnectAttempts), UI_CONSTANTS.MAX_RECONNECT_DELAY);
+
+            appendOutput(domElements.console, `Attempting to reconnect in ${delay / 1000} seconds...\n`, 'error');
+            setTimeout(() => {
+                reconnectAttempts++;
+                setupWebSocket();
+            }, delay);
+        }
+        //----------------------------------------------------------------------------------
+        function updateNodeState(nodeId, endpoint, isOn) {
+            const node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
+            if (!node) return;
+            let endpointContainer = node.querySelector(`.endpoint-control-container-${endpoint}`);
+            if (!endpointContainer) return;
+            endpointContainer.classList.remove("on", "off");
+            endpointContainer.classList.add(isOn ? "on" : "off");
+        }
+        //----------------------------------------------------------------------------------   
+        function truncate(str, n) { return (str.length > n) ? str.slice(0, n - 1) + '...' : str; };
+        //----------------------------------------------------------------------------------    
+        document.addEventListener('DOMContentLoaded', () => {
+            document.body.addEventListener('click', (event) => {
+
+                // allow changing the displayed name or details of the node
+                let nameElement = event.target.closest('.node-name');
+                if (!nameElement) nameElement = event.target.closest('.details-name');
+                if (!nameElement) return;
+                event.preventDefault();
+                if (nameElement.querySelector('input')) return;
+
+                const nodeId = nameElement.dataset.nodeId;
+                const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
+                const currentAlias = aliases[nodeId] || aliases[nodeId + "/details"] || '';
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentAlias;
+                input.className = 'node-name-input';
+                nameElement.textContent = '';
+                nameElement.appendChild(input);
+                input.focus();
+
+                const saveAlias = () => {
+                    const newAlias = input.value.trim();
+                    const updatedAliases = { ...aliases };
+                    if (newAlias === '') delete updatedAliases[nodeId];
+                    else updatedAliases[nodeId] = newAlias;
+                    localStorage.setItem('nodeAliases', JSON.stringify(updatedAliases));
+                    nameElement.textContent = updatedAliases[nodeId] || `Node ${nodeId}`;
+                };
+
+                const cancelEdit = () => nameElement.textContent = aliases[nodeId] || `Node ${nodeId}`;
+
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') saveAlias();
+                    else if (e.key === 'Escape') cancelEdit();
+                });
+                input.addEventListener('blur', cancelEdit);
+            });
+            document.addEventListener('mouseup', () => isDragging = false);
+            domElements.splitter.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                e.preventDefault();
+            });
+            //----------------------------------------------------------------------------------  
+            domElements.matterInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const cmd = domElements.matterInput.value.trim() || 'help';
+
+                    if (cmd.endsWith("help")) helpCollection = [];
+
+                    if (cmd.toUpperCase() === 'EXIT') {
+                        intentionallyClosed = true;
+                        ws.close();
+                        appendOutput(domElements.console, 'Session Closed\n', 'received');
+                        domElements.matterInput.value = '';
+                    } if (cmd.startsWith('refresh')) {
+                        const cmdArray = cmd.split(' ');
+                        const nodeId = cmdArray[1];
+                        deleteLocalStorageItems(new RegExp(`${nodeId}`));
+                        deleteAlias(nodeId);
+                        nodeLogs.delete(nodeId); // remove any existing log data for this node
+                        nodeLogCollection(nodeId, processLogdata);
+
+                        commandHistory.unshift(cmd);
+                        localStorage.setItem('commandHistory', JSON.stringify(commandHistory));
+
+                        historyIndex = -1;
+                        domElements.matterInput.value = '';
+                    } else {
+                        sendCommand(cmd);
+                        commandHistory.unshift(cmd);
+                        localStorage.setItem('commandHistory', JSON.stringify(commandHistory));
+
+                        historyIndex = -1;
+                        domElements.matterInput.value = '';
+                    }
+                }
+            });
+            //----------------------------------------------------------------------------------  
+            domElements.matterInput.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp' && commandHistory.length > 0) {
+                    e.preventDefault();
+                    if (historyIndex < commandHistory.length - 1) {
+                        historyIndex++;
+                        domElements.matterInput.value = commandHistory[historyIndex];
+                    }
+                } else if (e.key === 'ArrowDown' && commandHistory.length > 0) {
+                    e.preventDefault();
+                    if (historyIndex > -1) {
+                        historyIndex--;
+                        domElements.matterInput.value = historyIndex === -1 ? '' : commandHistory[historyIndex];
+                    }
+                }
+            });
+            //----------------------------------------------------------------------------------  
+            domElements.logLevelSelect.addEventListener('change', (e) => {
+                if (isUpdatingLogLevel) return;
+                const level = e.target.value;
+                configLoglevel(level);
+            });
+            //----------------------------------------------------------------------------------  
+            domElements.pairingInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const code = domElements.pairingInput.value.trim() || "HELP";
+
+                    if (code.toUpperCase() === "HELP") {
+                        showPopup("Pairing", "\n" + "Enter NNNNNNNN for a device already on the network. For Bluetooth commissioning, use NNNNNNNN --ble\n" +
+                            "For more information on using Bluetooth with matter.js, see:\n\n" +
+                            "<a href='https://github.com/project-chip/matter.js/tree/main/packages/nodejs-ble'>Using matter.js with Bluetooth</a> ", "help");
+                    } else {
+                        commissionNode(code); // this will start a whole sequence of events resulting in a bunch of async messages arriving
+                        domElements.pairingInput.value = '';
+                        nodeInitializing = true;
+                    }
+                }
+            });
+            //----------------------------------------------------------------------------------  
+            domElements.unpairInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const nodeId = domElements.unpairInput.value.trim();
+                    if (!nodeId || isNaN(nodeId) || +nodeId <= 0) {
+                        appendOutput(domElements.console, 'Error: Invalid node ID (must be a positive number)\n', 'error');
+                    } else unpairNode(nodeId); // when the decomissioned message comes in, we'll remove the node dis0lay
+                }
+            });
+            //----------------------------------------------------------------------------------  
+            const resizeSplitter = debounce((e) => {
+                if (!isDragging) return;
+                const headerHeight = document.querySelector('header').offsetHeight;
+                const totalHeight = window.innerHeight - headerHeight;
+                const splitterHeight = domElements.splitter.offsetHeight;
+                const newNodesHeight = e.clientY - headerHeight;
+                const newLowerHeight = totalHeight - newNodesHeight - splitterHeight;
+                if (newNodesHeight >= UI_CONSTANTS.MIN_NODES_HEIGHT && newLowerHeight >= UI_CONSTANTS.MIN_LOWER_HEIGHT) {
+                    domElements.nodesContainer.style.height = `${newNodesHeight}px`;
+                    domElements.lowerContainer.style.height = `${newLowerHeight}px`;
+                    const inputsHeight = domElements.inputsContainer.offsetHeight;
+                    domElements.consoleContainer.style.height = `${newLowerHeight - inputsHeight}px`;
+                }
+            }, UI_CONSTANTS.DEBOUNCE_DELAY);
+
+            document.addEventListener('mousemove', resizeSplitter);
+
+            // kick everything off..
+            setupWebSocket();
+        });
+
+    </script>
+</body>
+
+</html>
