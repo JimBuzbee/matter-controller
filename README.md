@@ -9,8 +9,15 @@ This repository contains examples of Matter Controllers that utilize a web socke
  - cd matter-controller/
  - npm i
  - npm run webshell
- - Visit http://localhost:3000/MatterInspector,html in your browser
+ - Visit http://localhost:3000/ in your browser
  
+
+## Select From Two Example Controllers
+
+ 
+![enter image description here](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/index.png)
+
+
 Once the webshell server is running, the easiest want to get started with a Matter device, is to use one that has already been commissioned via Google/Apple/Home Assistant/etc. In the appropriate controller, locate the menu for sharing or linking the device with another app. When given a pairing code, enter it in the webshell form.  Once entered, after a short delay a visualization should pop up in the browser user interface. If it doesn't, check the console for messages.
 
 If you want to commission a Matter device that hasn't already been set up, see the matter.js shell documentation regarding bluetooth libraries for your system, start the webshell with a "--ble" parameter,  and then when entering the paring code in the browser UI, add --ble, e.g. "0123456789  --ble"
