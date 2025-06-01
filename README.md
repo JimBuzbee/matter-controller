@@ -12,10 +12,10 @@ This repository contains examples of Matter Controllers that utilize a web socke
  - Visit http://localhost:3000/ in your browser
  
 
-## Select From Two Example Controllers
+## Select From Three Example Controllers
 
  
-![enter image description here](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/index.png)
+![image of example selection page](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/index.png)
 
 
 Once the webshell server is running, the easiest want to get started with a Matter device, is to use one that has already been commissioned via Google/Apple/Home Assistant/etc. In the appropriate controller, locate the menu for sharing or linking the device with another app. When given a pairing code, enter it in the webshell form.  Once entered, after a short delay a visualization should pop up in the browser user interface. If it doesn't, check the console for messages.
@@ -23,15 +23,20 @@ Once the webshell server is running, the easiest want to get started with a Matt
 If you want to commission a Matter device that hasn't already been set up, see the matter.js shell documentation regarding bluetooth libraries for your system, start the webshell with a "--ble" parameter,  and then when entering the paring code in the browser UI, add --ble, e.g. "0123456789  --ble"
  
 ## MatterInspector.html
-![enter image description here](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/MatterExplorer.png)
+![image of Matter Inspector example](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/MatterExplorer.png)
 This example creates a "tile" for each previously or newly commissioned Matter node. The tile shows the node ID, description, status, commands (for some devices),  and the standard components of a Matter device: endpoints,  clusters, and attributes. The name and description of each tile can be persistently changed by clicking and entering the desired value. To show the current state of cluster attributes, click the cluster name in an endpoint display.  As attributes are changed asynchronously, such as when sensors report new values or when a controller commands a light, the updated attribute value will be temporarily displayed underneath its associated cluster.
 
 ## Example.html
 
-![enter image description here](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/example.png)
+![image of example page](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/example.png)
 
 This is a minimal, single-file, standalone example showing interaction with Matter devices.  It is similar to MatterInspector, but with fewer options and interactions. It adds sensor value conversion, formatting and display.
 
+## Graph Example
+
+![image of graphs example](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/graphexample.png)
+
+This is a minimal example showing how to generate graphs based off of Matter sensors. In reality, it is probably not all that useful as it only collects data while the page is displayed, so historic values will be lost when the page is closed.  To implement it properly, the data should be stored on the server-side and fetched when the page is loaded. This example shows Temperature, Humidity, Air pressure, Light and Electrical sensors.
  ## Details TBD
 running...
 http options...
