@@ -7,11 +7,11 @@
 -->
 <html lang="en">
 
-
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="/favicon.png" type="image/png" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="ChartComponents.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Matter Web Shell</title>
     <style>
@@ -174,7 +174,6 @@
             align-items: center;
         }
 
-
         .chart-container {
             margin: 1px;
             max-width: 400px;
@@ -266,13 +265,10 @@
         }
         logLevelSelect = document.getElementById('log-level-select');
 
-
         //----------------------------------------------------------------------------------  
         logLevelSelect.addEventListener('change', (e) => {
             sendCommand(`config loglevel set ${e.target.value}`);
         });
-
-
 
         function initConsole(clear) {
             if (clear) consoleDiv.innerHTML = ''; // Clear the console
@@ -358,21 +354,11 @@
                                         element = document.createElement('span');
                                         if (isSensorType(currentEndpointType)) {
                                             let deviceKey = `${currentNode}/${currentEndpoint}`
-                                            let min = currentEndpointType.includes('temperature') ? -10 :
-                                                currentEndpointType.includes('humidity') ? 0 :
-                                                    currentEndpointType.includes('pressure') ? 100 :
-                                                        currentEndpointType.includes('light') ? 0 : 115;
-
-                                            let max = currentEndpointType.includes('temperature') ? 120 :
-                                                currentEndpointType.includes('humidity') ? 100 :
-                                                    currentEndpointType.includes('pressure') ? 5000 :
-                                                        currentEndpointType.includes('light') ? 4000 : 125;
-
                                             element.textContent = "";
                                             if (!sensorDataByDevice[deviceKey]) {
                                                 sensorDataByDevice[deviceKey] = {
                                                     readings: [],
-                                                    chart: createChart(element, min, max, deviceKey, currentNode, currentEndpoint)
+                                                    chart: createChart(element, deviceKey, currentNode, currentEndpoint)
                                                 };
                                             }
                                         }
@@ -386,9 +372,12 @@
                                         const small = document.createElement('small');
                                         small.textContent = currentEndpointType.replace('MA-', '');
                                         small.textContent = currentEndpointType.replace('sensor', ' sensor');
+                                        const smallReading = document.createElement('small');
+                                        smallReading.id=`${currentEndpoint}-container-${currentNode}/reading`
                                         const br = document.createElement('br');
                                         endpointContainer.innerHTML = '';
                                         endpointContainer.appendChild(small);
+                                        endpointContainer.appendChild(smallReading);
                                         endpointContainer.appendChild(br);
                                         document.getElementById(`container-${currentNode}`).appendChild(endpointContainer);
                                     }
@@ -415,29 +404,25 @@
                             const value = typeof formatter === 'function' ? formatter(matches[6]) : matches[6];
                             const element = document.getElementById(`attr-${matches[1]}/${matches[3]}/${matches[5]}`);
                             if (element) {
-                                const small = document.createElement("small");
-                                small.textContent = value;
-                                //        element.innerHTML = "";
-                                //        element.appendChild(small);
+                                document.getElementById(`${matches[3]}-container-${matches[1]}/reading`).textContent = ' ' + value;
                             }
-                            if (+matches[4] === TEMPERATURE) {
-                                console.log(`Updating temperature chart for Node ${matches[1]}, Endpoint ${matches[3]}: ${value}`);
-                                updateChart(`${matches[1]}/${matches[3]}`, ((matches[6] / 100) * 9 / 5) + 32);
-                            } else if (+matches[4] === VOLTAGE) {
-                                console.log(`Updating voltage chart for Node ${matches[1]}, Endpoint ${matches[3]}: ${value}`);
-                                updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 1000);
-                            } else if (+matches[4] === HUMIDITY) {
-                                console.log(`Updating humidity chart for Node ${matches[1]}, Endpoint ${matches[3]}: ${value}`);
-                                updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 100);
-                            } else if (+matches[4] === PRESSURE) {
-                                console.log(`Updating pressure chart for Node ${matches[1]}, Endpoint ${matches[3]}: ${value}`);
-                                updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 10000);
-                            } else if (+matches[4] === ILLUMINANCE) {
-                                console.log(`Updating illuminance chart for Node ${matches[1]}, Endpoint ${matches[3]}: ${value}`);
-                                updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 100);
+                            switch (+matches[4]) {
+                                case TEMPERATURE:
+                                    updateChart(`${matches[1]}/${matches[3]}`, ((matches[6] / 100) * 9 / 5) + 32);
+                                    break;
+                                case VOLTAGE:
+                                    updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 1000);
+                                    break;
+                                case HUMIDITY:
+                                    updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 100);
+                                    break;
+                                case PRESSURE:
+                                    updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 10000);
+                                    break;
+                                case ILLUMINANCE:
+                                    updateChart(`${matches[1]}/${matches[3]}`, matches[6] / 100);
+                                    break;
                             }
-
-
                         }
                     }
 
@@ -505,17 +490,7 @@
                 logMessage(`Sent: ${cmd}`, 'sent');
             } else logMessage(`WebSocket not connected. Command "${cmd}" skipped.\n`, 'error');
         }
-
         document.addEventListener('DOMContentLoaded', () => { setupWebSocket(); });
-
-
-
-
-
-
-
-
     </script>
 </body>
-
 </html>
