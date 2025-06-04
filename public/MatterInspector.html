@@ -52,6 +52,21 @@
     </div>
 
     <script>
+        const ON_OFF = 6;
+        const ILLUMINANCE = 1024;
+        const TEMPERATURE = 1026;
+        const PRESSURE = 1027;
+        const HUMIDITY = 1029;
+        const VOLTAGE = 144; // etc.
+
+        const valueFormat = {
+            [VOLTAGE]: (value, units = 'v') => { return (value / 1000).toFixed(1) + units; },
+            [ILLUMINANCE]: (value, units = 'lux') => { return (value / 100).toFixed(1) + units; },
+            [TEMPERATURE]: (value, units = 'F') => { return (units === "F" ? (value / 100 * 9 / 5 + 32) : (value / 100)).toFixed(1) + '°' + units; },
+            [PRESSURE]: (value, units = 'mb') => { return (value / 10000).toFixed(1) + units; },
+            [HUMIDITY]: (value, units = '%') => { return (value / 100).toFixed(1) + units; },
+        }
+
         const WS_STATES = {
             CONNECTING: WebSocket.CONNECTING,
             OPEN: WebSocket.OPEN,
@@ -537,9 +552,12 @@
                 attr.id = `${nodeId}/${endpoint}/${cluster}/${attribute}`;
                 clusterElement.after(attr);
             }
+            const formatter = valueFormat[cluster];
+            value = typeof formatter === 'function' ? formatter(value) : value;
+
             attr.lastUpdate = Date.now();
             attr.classList.remove("attributetimingout");
-            attr.textContent = truncate(attribute, 12) + " " + value;
+            attr.textContent = truncate(attribute, 10) + " " + value;
 
             return;
         }

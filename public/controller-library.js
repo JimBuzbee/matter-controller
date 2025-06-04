@@ -2,7 +2,7 @@
 const _regEx = {
   commandInvoked: /Command .* invoked/,
   deviceTypeList: /"deviceTypeList"\s*\([^)]*\):\s*value\s*=\s*(\[[^\]]*\])/,   // "deviceTypeList" (0x0): value = [{"deviceType":18,"revision":1},{"deviceType":22,"revision":3}]
-  attributeChanged: /(\d+): Attribute (\w+|\d+)\/(\d+)\/(\d+)\/(\w+) changed to (\w+)/,
+  attributeChanged: /(\d+): Attribute (\w+|\d+)\/(\d+)\/(\d+)\/(\w+) changed to (\w+)/, // 17148967204303126331: Attribute undefined/3/1029/measuredValue changed to 1340
   attributesForCluster: /Attribute values for cluster\s+(\w+)\s+\((\d+)\/(\d+)\/(-?\d+)\)/,
   clusterClient: /Cluster-Client "([^"]+)".*?\(([^\)]+)\)/,  // 2025-04-13 08:56:27.118 INFO EndpointStructureLogger ⎸       Cluster-Client "OnOff" (0x6) (Features: lighting)
   stateInformationCallback: /^stateInformationCallback Node (\d+) (\S+)/,
