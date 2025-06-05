@@ -6,6 +6,71 @@
 
 const MatterControllerLibrary = (function () {
 
+  const _idToDevice = {
+    0x0011: "Power Source",
+    0x0012: "OTA Requestor",
+    0x0013: "Bridged Node",
+    0x0014: "OTA Provider",
+    0x0016: "Root Node",
+    0x0510: "Electrical Sensor",
+    0x050D: "Device Energy Management",
+    0x0100: "On/Off Light",
+    0x0101: "Dimmable Light",
+    0x010C: "Color Temperature Light",
+    0x010D: "Extended Color Light",
+    0x010A: "On/Off Plug-in Unit",
+    0x010B: "Dimmable Plug-In Unit",
+    0x0303: "Pump",
+    0x0042: "Water Valve",
+    0x0103: "On/Off Light Switch",
+    0x0104: "Dimmer Switch",
+    0x0105: "Color Dimmer Switch",
+    0x0840: "Control Bridge",
+    0x0304: "Pump Controller",
+    0x000F: "Generic Switch",
+    0x0015: "Contact Sensor",
+    0x0106: "Light Sensor",
+    0x0107: "Occupancy Sensor",
+    0x0302: "Temperature Sensor",
+    0x0305: "Pressure Sensor",
+    0x0306: "Flow Sensor",
+    0x0307: "Humidity Sensor",
+    0x0850: "On/Off Sensor",
+    0x0076: "Smoke CO Alarm",
+    0x002C: "Air Quality Sensor",
+    0x0041: "Water Freeze Detector",
+    0x0043: "Water Leak Detector",
+    0x0044: "Rain Sensor",
+    0x000A: "Door Lock",
+    0x000B: "Door Lock Controller",
+    0x0202: "Window Covering",
+    0x0203: "Window Covering Controller",
+    0x0301: "Thermostat",
+    0x002B: "Fan",
+    0x002D: "Air Purifier",
+    0x0028: "Basic Video Player",
+    0x0023: "Casting Video Player",
+    0x0022: "Speaker",
+    0x0024: "Content App",
+    0x0029: "Casting Video Client",
+    0x002A: "Video Remote Control",
+    0x0027: "Mode Select",
+    0x000E: "Aggregator",
+    0x0074: "Robotic Vacuum Cleaner",
+    0x0070: "Refrigerator",
+    0x0071: "Temperature Controlled Cabinet",
+    0x0072: "Room Air Conditioner",
+    0x0073: "Laundry Washer",
+    0x0075: "Dishwasher",
+    0x0077: "Cook Surface",
+    0x0078: "Cooktop",
+    0x0079: "Microwave Oven",
+    0x007A: "Extractor Hood",
+    0x007B: "Oven",
+    0x007C: "Laundry Dryer",
+    0x050C: "EVSE"
+  };
+
   const _regEx = {
     commandInvoked: /Command .* invoked/,
     deviceTypeList: /"deviceTypeList"\s*\([^)]*\):\s*value\s*=\s*(\[[^\]]*\])/,   // "deviceTypeList" (0x0): value = [{"deviceType":18,"revision":1},{"deviceType":22,"revision":3}]
@@ -20,7 +85,7 @@ const MatterControllerLibrary = (function () {
   let _clusterAttributeCollectionData = null;
   let _regExProcessing = [];
   let _ws, _logger = console.log;
-  
+
   function initControllerLibrary(ws, logger) {
     _ws = ws;
     _logger = logger;
@@ -29,6 +94,10 @@ const MatterControllerLibrary = (function () {
   function controlOnOffDevice(command, nodeId, endpoint) {
     sendCommand(`commands onoff ${command} ${nodeId} ${endpoint}`);
   }
+  function idToDevice( id ) {
+    return _idToDevice[id] ? _idToDevice[id] : "Unknown ";
+  }
+
   function processLine(text, rawData) {
     // for all of the regex expressions check and process if there is a match
     for (const element of _regExProcessing) {
@@ -76,24 +145,24 @@ const MatterControllerLibrary = (function () {
   function cleanupNode(nodeId) {
     _regExProcessing = _regExProcessing.filter(element => element.nodeId !== nodeId);
   }
-function _registerRegEx(regEx, callback, options = {}) { // Added options parameter
-  if (regEx === undefined) {
-    console.log(`${Date()} Not adding undefined regEx`);
-    console.trace();
-    return;
-  }
-  const regExObject = {
-    expression: regEx,
-    label: options.label || "", // You can also use options for label if needed
-    callback: callback
-  };
+  function _registerRegEx(regEx, callback, options = {}) { // Added options parameter
+    if (regEx === undefined) {
+      console.log(`${Date()} Not adding undefined regEx`);
+      console.trace();
+      return;
+    }
+    const regExObject = {
+      expression: regEx,
+      label: options.label || "", // You can also use options for label if needed
+      callback: callback
+    };
 
-  if (options.nodeId) { // If a nodeId is provided in options, add it
-    regExObject.nodeId = options.nodeId;
-  }
+    if (options.nodeId) { // If a nodeId is provided in options, add it
+      regExObject.nodeId = options.nodeId;
+    }
 
-  _addObjectToArray(_regExProcessing, regExObject);
-}
+    _addObjectToArray(_regExProcessing, regExObject);
+  }
   function xxx_registerRegEx(regEx, callback) {
     if (regEx === undefined) { console.log(`${Date()} Not adding undefined regEx`); console.trace(); return; }
     _addObjectToArray(_regExProcessing, { expression: regEx, label: "", callback: callback });
@@ -101,13 +170,13 @@ function _registerRegEx(regEx, callback, options = {}) { // Added options parame
   function readOnOff(nodeId, endpoint, callback) {
     // Attribute value for onOff 1610017663230155987/1/6/0: true
     const regEx = new RegExp(`Attribute value for onOff ${nodeId}/${endpoint}/6/0: (true|false)`);
-    _registerRegEx(regEx, (matches) => { callback(matches[1]); return true;}, { nodeId: nodeId });
+    _registerRegEx(regEx, (matches) => { callback(matches[1]); return true; }, { nodeId: nodeId });
     sendCommand(`attributes onoff read onoff ${nodeId} ${endpoint}`);
   }
   function onOnOffChanged(nodeId, endpoint, callback) {
     // 1610017663230155987: Attribute undefined/6/6/onOff changed to false
     const regEx = new RegExp(`${nodeId}: Attribute undefined/${endpoint}/6/onOff changed to (true|false)`);
-    _registerRegEx(regEx, (matches) => callback(matches[1]),{ nodeId: nodeId });
+    _registerRegEx(regEx, (matches) => callback(matches[1]), { nodeId: nodeId });
   }
   function readCurrentLevel(nodeId, endpoint, callback) {
     // 1610017663230155987: Attribute undefined/6/8/currentLevel changed to 107
@@ -121,17 +190,17 @@ function _registerRegEx(regEx, callback, options = {}) { // Added options parame
   }
   function readHue(nodeId, endpoint, callback) {
     const regEx = new RegExp(`Attribute value for currentHue ${nodeId}/${endpoint}/768/0: (\\d+)`);
-    _registerRegEx(regEx, (matches) => { callback(matches[1]); return true; }, { nodeId: nodeId } );
+    _registerRegEx(regEx, (matches) => { callback(matches[1]); return true; }, { nodeId: nodeId });
     sendCommand(`attributes colorcontrol read currenthue ${nodeId} ${endpoint}`);
   }
   function onCurrentHueChanged(nodeId, endpoint, callback) {
     // 1610017663230155987: Attribute undefined/6/768/currentHue changed to 183
     const regEx = new RegExp(`${nodeId}: Attribute undefined/${endpoint}/768/currentHue changed to (\\d+)`);
-    _registerRegEx(regEx, (matches) => callback(matches[1]), { nodeId: nodeId } );
+    _registerRegEx(regEx, (matches) => callback(matches[1]), { nodeId: nodeId });
   }
   function readCurrentSaturation(nodeId, endpoint, callback) {
     const regEx = new RegExp(`Attribute value for currentSaturation ${nodeId}/${endpoint}/768/1: (\\d+)`);
-    _registerRegEx(regEx, (matches) => { callback(matches[1]); return true; }, { nodeId: nodeId }  );
+    _registerRegEx(regEx, (matches) => { callback(matches[1]); return true; }, { nodeId: nodeId });
     sendCommand(`attributes colorcontrol read currentsaturation ${nodeId} ${endpoint}`);
   }
   function onCurrentSaturationChanged(nodeId, endpoint, callback) {
@@ -216,6 +285,7 @@ function _registerRegEx(regEx, callback, options = {}) { // Added options parame
   }
 
   return {
+    idToDevice: idToDevice,
     initControllerLibrary: initControllerLibrary,
     controlOnOffDevice: controlOnOffDevice,
     processLine: processLine,
