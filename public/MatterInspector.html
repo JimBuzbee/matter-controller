@@ -67,13 +67,6 @@
             [HUMIDITY]: (value, units = '%') => { return (value / 100).toFixed(1) + units; },
         }
 
-        const WS_STATES = {
-            CONNECTING: WebSocket.CONNECTING,
-            OPEN: WebSocket.OPEN,
-            CLOSING: WebSocket.CLOSING,
-            CLOSED: WebSocket.CLOSED
-        };
-
         const UI_CONSTANTS = {
             DEFAULT_PORT: 8081,
             MIN_NODES_HEIGHT: 10,
@@ -163,7 +156,6 @@
 
         let commandHistory = JSON.parse(localStorage.getItem('commandHistory')) || [];
         let historyIndex = -1;
-        let helpCollection = null;
         let isUpdatingLogLevel = false;
         let isDragging = false;
         let intentionallyClosed = false;
@@ -318,8 +310,7 @@
         }
         //----------------------------------------------------------------------------------
         function setupForNodeList(nodeId) {
-            onNodeList(nodeId, ((nodeId, raw) => { showPopup(nodeId, raw, 'json') }));
-            sendNodeList(nodeId);
+            MatterControllerLibrary.sendNodeList(nodeId, (listData) => showPopup(nodeId, listData, 'json'));
         }
         //----------------------------------------------------------------------------------
         function setupForNodeLogCollection(nodeId) {
@@ -369,7 +360,7 @@
             if (storedConfig) storedConfig.forEach((config) => addEndpointClusterButton(nodeId, config.endpoint, config.cluster, config.clusterNumber))
 
             if (status === "Connected") {
-                nodeSubscribe(nodeId);
+                MatterControllerLibrary.nodeSubscribe(nodeId);
                 node.classList.remove("connecting-node");
                 node.querySelector(`[id="${nodeId}/status"]`).classList.remove("connecting-node-status");
             }
@@ -437,10 +428,10 @@
                 input.sat = saturation;
                 input.val = value;
 
-                setHueSaturation(nodeId, endpoint, hue, saturation);
+                MatterControllerLibrary.setHueSaturation(nodeId, endpoint, hue, saturation);
             });
 
-            readHue(nodeId, endpoint, (value) => {
+            MatterControllerLibrary.readHue(nodeId, endpoint, (value) => {
                 const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
                 if (color) {
                     color.hue = value;
@@ -449,7 +440,7 @@
                 return true;
             });
 
-            onCurrentHueChanged(nodeId, endpoint, (value) => {
+            MatterControllerLibrary.onCurrentHueChanged(nodeId, endpoint, (value) => {
                 const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
                 if (color) {
                     color.hue = value;
@@ -457,7 +448,7 @@
                 }
             });
 
-            readCurrentSaturation(nodeId, endpoint, (value) => {
+            MatterControllerLibrary.readCurrentSaturation(nodeId, endpoint, (value) => {
                 const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
                 if (color) {
                     color.sat = value;
@@ -466,7 +457,7 @@
                 return true;
             });
 
-            onCurrentSaturationChanged(nodeId, endpoint, (value) => {
+            MatterControllerLibrary.onCurrentSaturationChanged(nodeId, endpoint, (value) => {
                 const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
                 if (color) {
                     color.sat = value;
@@ -495,14 +486,14 @@
             slider.id = `${nodeId}/${endpoint}/currentLevel`;
             slider.className = 'node-button control';
 
-            readCurrentLevel(nodeId, endpoint, (value) => {
+            MatterControllerLibrary.readCurrentLevel(nodeId, endpoint, (value) => {
                 slider.value = value;
                 const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
                 if (color) color.val = value;
                 return true;
             });
 
-            onCurrentLevelChanged(nodeId, endpoint, (value) => {
+            MatterControllerLibrary.onCurrentLevelChanged(nodeId, endpoint, (value) => {
                 const slider = document.getElementById(`${nodeId}/${endpoint}/currentLevel`);
                 slider.value = value;
                 const color = document.getElementById(`${nodeId}/${endpoint}/colorselect`);
@@ -510,7 +501,7 @@
             });
 
             slider.addEventListener("mouseup", function () {
-                setLevel(nodeId, endpoint, slider.value);
+                MatterControllerLibrary.setLevel(nodeId, endpoint, slider.value);
             });
 
             return slider;
@@ -530,10 +521,10 @@
 
             // should be a better way to do this
             if (!commandOrCluster.includes('Unknown cluster')) {
-                if (type === "cluster") 
-                    button.onclick = () => readClusterAttributes(nodeId, endpoint, commandOrCluster, (id, details) => showPopup(id, details, "Attributes"));
-                else button.onclick = () => controlOnOffDevice(commandOrCluster, nodeId, endpoint);
-                
+                if (type === "cluster")
+                    button.onclick = () => MatterControllerLibrary.readClusterAttributes(nodeId, endpoint, commandOrCluster, (id, details) => showPopup(id, details, "Attributes"));
+                else button.onclick = () => MatterControllerLibrary.controlOnOffDevice(commandOrCluster, nodeId, endpoint);
+
             }
             return button;
         }
@@ -630,10 +621,10 @@
                 // only need to do this once although action could be on, off, toggle
                 if (action === "on") {
                     // set the current state (on or off)
-                    readOnOff(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true"); });
+                    MatterControllerLibrary.readOnOff(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true"); });
 
                     // register to get callback whenever it changes
-                    onOnOffChanged(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true") });
+                    MatterControllerLibrary.onOnOffChanged(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true") });
                 }
                 // assume button, but if support is added for different types - will need to update here
                 inputElement = createButton(nodeId, endpoint, clusterNumber, action, type); // on, off, toggle
@@ -657,9 +648,9 @@
             }
             // keep track of log level so we can restore it later
             originalLogLevel = domElements.logLevelSelect.value || "error";
-            configLoglevel("info"); // need to have info level to get the log lines we want
+            MatterControllerLibrary.configLoglevel("info"); // need to have info level to get the log lines we want
 
-            setTimeout(() => nodeLog(nodeId, callback), 500);  // wait before sending to give loglevel time to change 
+            setTimeout(() => MatterControllerLibrary.nodeLog(nodeId, callback), 500);  // wait before sending to give loglevel time to change 
         }
         //----------------------------------------------------------------------------------
         function updateLogLevelUI(level) {
@@ -757,14 +748,9 @@
             return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
         }
         //----------------------------------------------------------------------------------
-        function addObjectToArray(array, newObject) {
-            const exists = array.some(obj => { return obj.expression.source === newObject.expression.source && obj.expression.flags === newObject.expression.flags; });
-            if (!exists) array.push(newObject);
-        }
-        //----------------------------------------------------------------------------------
         function processLogdata(nodeId, logData) {
             nodeLogs.set(nodeId, logData); // save the log text
-            configLoglevel(originalLogLevel);
+            MatterControllerLibrary.configLoglevel(originalLogLevel);
             let currentNode = nodeId;
             let currentEndpoint = -1;
             let currentClusterNumber = -1;
@@ -823,58 +809,45 @@
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                initControllerLibrary(ws, appendOutput);
+                MatterControllerLibrary.initControllerLibrary(ws, appendOutput);
                 appendOutput(`Connected to WebSocket at ${wsUrl}\n`);
 
                 reconnectAttempts = 0;
                 intentionallyClosed = false;
 
-                commandInvoked((callback) => { ; });
+                MatterControllerLibrary.commandInvoked((callback) => { ; });
 
                 // "catch-all" for attribute changes for example when asynchronuous changes happen to a sensor
                 // For example: 17148967204303126331: Attribute undefined/3/1029/measuredValue changed to 1340  
-                onAttributeChanged((nodeId, endpoint, cluster, attribute, value) => updateAttributeDisplay(nodeId, endpoint, cluster, attribute, value));
+                MatterControllerLibrary.onAttributeChanged((nodeId, endpoint, cluster, attribute, value) => updateAttributeDisplay(nodeId, endpoint, cluster, attribute, value));
 
                 // stateInformationCallback Node 352067654833022968 disconnected
-                onStateInformationCallback((nodeId, state) => {
+                MatterControllerLibrary.onStateInformationCallback((nodeId, state) => {
                     if (state === "decommissioned") {
                         removeNode(nodeId);
                         deleteLocalStorageItems(new RegExp(`${nodeId}`));
                         deleteAlias(nodeId);
                         domElements.unpairInput.value = '';
-                        cleanupNode(nodeId);
-                    } else if (state !== "disconnected") nodeStatus(nodeId);
+                        MatterControllerLibrary.cleanupNode(nodeId);
+                    } else if (state !== "disconnected") MatterControllerLibrary.nodeStatus(nodeId);
                 });
 
-                onNodeStatusCallback((nodeId, status, details) => {
+                MatterControllerLibrary.onNodeStatusCallback((nodeId, status, details) => {
                     createOrUpdateNode(nodeId, status, details);
                     if ((status === "Connected") && nodeInitializing)
                         nodeLogCollection(nodeId, (nodeId, logData) => { processLogdata(nodeId, logData); });
                 });
 
-                readLoglevelOnLoglevelchanged((level) => updateLogLevelUI(level.toLowerCase().trim()));
+                MatterControllerLibrary.readLoglevelOnLoglevelchanged((level) => updateLogLevelUI(level.toLowerCase().trim()));
 
-                initializeNodes(); // aka nodes connect
+                MatterControllerLibrary.initializeNodes(); // aka nodes connect
             };
             //----------------------------------------------------------------------------------
             ws.onmessage = (event) => {
                 if (typeof event.data === 'string') {
                     let text = event.data;
-
                     appendOutput(`Received: ${text}`, text.toLowerCase().includes('error') ? 'error' : 'received');
-                    processLine(text, event.data);
-
-                    // FIXME - should probably be in the library with an associated callback when "Done" seen.
-                    // if we are collecting help - this is fraught with possibilities of false-match for a help line
-                    //  while collecting help messages, we just take anything from the socket until we see "^Done."
-                    if (helpCollection) {
-                        if (text.match(/^Done./)) {
-                            const helpText = helpCollection.join('\n');
-                            if (helpText) showPopup("", "\n" + helpText, 'help');
-                            helpCollection = null;
-                        } else helpCollection.push(text);
-                        return;
-                    }
+                    MatterControllerLibrary.processLine(text, event.data);
                 }
             };
             //----------------------------------------------------------------------------------
@@ -892,7 +865,7 @@
         }
         //----------------------------------------------------------------------------------
         function scheduleReconnect() {
-            if (ws && ws.readyState !== WS_STATES.CLOSED) return;
+            if (ws && ws.readyState !== WebSocket.CLOSED) return;
             const delay = Math.min(UI_CONSTANTS.RECONNECT_DELAY * Math.pow(2, reconnectAttempts), UI_CONSTANTS.MAX_RECONNECT_DELAY);
 
             appendOutput(`Attempting to reconnect in ${delay / 1000} seconds...\n`, 'error');
@@ -911,6 +884,13 @@
             endpointContainer.classList.add(isOn ? "on" : "off");
         }
         //----------------------------------------------------------------------------------   
+        function manageCommandWindow(cmd) {
+            commandHistory.unshift(cmd);
+            localStorage.setItem('commandHistory', JSON.stringify(commandHistory));
+
+            historyIndex = -1;
+            domElements.matterInput.value = '';
+        }
         function truncate(str, n) { return (str.length > n) ? str.slice(0, n - 1) + '...' : str; };
         //----------------------------------------------------------------------------------    
         document.addEventListener('DOMContentLoaded', () => {
@@ -962,34 +942,22 @@
                 if (e.key === 'Enter') {
                     const cmd = domElements.matterInput.value.trim() || 'help';
 
-                    if (cmd.endsWith("help")) helpCollection = [];
-
-                    if (cmd.toUpperCase() === 'EXIT') {
+                    if (cmd.endsWith("help")) MatterControllerLibrary.matterShellHelp(cmd, (helpText) => showPopup("", "\n" + helpText, 'help'));
+                    else if (cmd.toUpperCase() === 'EXIT') {
                         intentionallyClosed = true;
                         ws.close();
                         appendOutput('Session Closed\n', 'received');
-                        domElements.matterInput.value = '';
-                    } if (cmd.startsWith('refresh')) {
+                    } else if (cmd.startsWith('refresh')) {
                         const cmdArray = cmd.split(' ');
                         const nodeId = cmdArray[1];
-                        deleteLocalStorageItems(new RegExp(`${nodeId}`));
-                        deleteAlias(nodeId);
-                        nodeLogs.delete(nodeId); // remove any existing log data for this node
-                        nodeLogCollection(nodeId, processLogdata);
-
-                        commandHistory.unshift(cmd);
-                        localStorage.setItem('commandHistory', JSON.stringify(commandHistory));
-
-                        historyIndex = -1;
-                        domElements.matterInput.value = '';
-                    } else {
-                        sendCommand(cmd);
-                        commandHistory.unshift(cmd);
-                        localStorage.setItem('commandHistory', JSON.stringify(commandHistory));
-
-                        historyIndex = -1;
-                        domElements.matterInput.value = '';
-                    }
+                        if (nodeId) {
+                            deleteLocalStorageItems(new RegExp(`${nodeId}`));
+                            deleteAlias(nodeId);
+                            nodeLogs.delete(nodeId); // remove any existing log data for this node
+                            nodeLogCollection(nodeId, processLogdata);
+                        } else appendOutput('Error, Format: refresh <node id>', 'error');
+                    } else MatterControllerLibrary.sendCommand(cmd);
+                    manageCommandWindow(cmd);
                 }
             });
             //----------------------------------------------------------------------------------  
@@ -1012,7 +980,7 @@
             domElements.logLevelSelect.addEventListener('change', (e) => {
                 if (isUpdatingLogLevel) return;
                 const level = e.target.value;
-                configLoglevel(level);
+                MatterControllerLibrary.configLoglevel(level);
             });
             //----------------------------------------------------------------------------------  
             domElements.pairingInput.addEventListener('keypress', (e) => {
@@ -1024,7 +992,7 @@
                             "For more information on using Bluetooth with matter.js, see:\n\n" +
                             "<a href='https://github.com/project-chip/matter.js/tree/main/packages/nodejs-ble'>Using matter.js with Bluetooth</a> ", "help");
                     } else {
-                        commissionNode(code); // this will start a whole sequence of events resulting in a bunch of async messages arriving
+                        MatterControllerLibrary.commissionNode(code); // this will start a whole sequence of events resulting in a bunch of async messages arriving
                         domElements.pairingInput.value = '';
                         nodeInitializing = true;
                     }
@@ -1036,7 +1004,7 @@
                     const nodeId = domElements.unpairInput.value.trim();
                     if (!nodeId || isNaN(nodeId) || +nodeId <= 0) {
                         appendOutput('Error: Invalid node ID (must be a positive number)\n', 'error');
-                    } else unpairNode(nodeId); // when the decomissioned message comes in, we'll remove the node dis0lay
+                    } else MatterControllerLibrary.unpairNode(nodeId); // when the decomissioned message comes in, we'll remove the node dis0lay
                 }
             });
             //----------------------------------------------------------------------------------  
