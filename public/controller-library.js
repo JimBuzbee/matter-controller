@@ -72,14 +72,15 @@ const MatterControllerLibrary = (function () {
   };
 
   const _regEx = {
-    commandInvoked: /Command .* invoked/,
+    onCommandInvoked: /Command .* invoked/,
     deviceTypeList: /"deviceTypeList"\s*\([^)]*\):\s*value\s*=\s*(\[[^\]]*\])/,   // "deviceTypeList" (0x0): value = [{"deviceType":18,"revision":1},{"deviceType":22,"revision":3}]
     attributeChanged: /(\d+): Attribute (\w+|\d+)\/(\d+)\/(\d+)\/(\w+) changed to (\w+)/, // 17148967204303126331: Attribute undefined/3/1029/measuredValue changed to 1340
     attributesForCluster: /Attribute values for cluster\s+(\w+)\s+\((\d+)\/(\d+)\/(-?\d+)\)/,
     clusterClient: /Cluster-Client "([^"]+)".*?\(([^\)]+)\)/,  // 2025-04-13 08:56:27.118 INFO EndpointStructureLogger ⎸       Cluster-Client "OnOff" (0x6) (Features: lighting)
     stateInformationCallback: /^stateInformationCallback Node (\d+) (\S+)/,
     nodeStatus: /Node\s+(\d+):\s+Node Status:\s+(.+?)\s+\((.+?)\)/,
-    logLevel: /(?:New Loglevel for Console:"\s*|\s*Current Loglevel for Console:\s*)(\w+)\s*"?/,
+    logLevel: /Current Loglevel for Console:\s*(\w+)/, // Current Loglevel for Console: error
+    onLogLevel: /New Loglevel for Console:"\s*(\w+)"/, // New Loglevel for Console:" warn"
   }
 
   let _clusterAttributeCollectionData = null;
@@ -94,7 +95,7 @@ const MatterControllerLibrary = (function () {
   function controlOnOffDevice(command, nodeId, endpoint) {
     sendCommand(`commands onoff ${command} ${nodeId} ${endpoint}`);
   }
-  function idToDevice( id ) {
+  function idToDevice(id) {
     return _idToDevice[id] ? _idToDevice[id] : "Unknown ";
   }
 
@@ -208,6 +209,24 @@ const MatterControllerLibrary = (function () {
     const regEx = new RegExp(`${nodeId}: Attribute undefined/${endpoint}/768/currentSaturation changed to (\\d+)`);
     _registerRegEx(regEx, (matches) => callback(matches[1]), { nodeId: nodeId });
   }
+
+  function readClusterAttributes(nodeId, endpoint, cluster, callback) {
+
+    // if there's not already a read in process
+    if (!_clusterAttributeCollectionData) {
+      _clusterAttributeCollectionData = { nodeId, endpoint, cluster, details: [], timeoutId: null, callback: callback };
+
+      sendCommand(`attributes ${cluster.toLowerCase()} read all ${nodeId} ${endpoint}`);
+
+      // "Done." detected and endClusterAttributeCollection called in onClusterAttributeCollection
+      _onClusterAttributeCollection((attribute, id, value) => {
+        _clusterAttributeCollectionData.details.push("  \"" + attribute + " " + id + "\": " +
+          ((value[0] === "{" || value[0] === "[") ? JSON.stringify(JSON.parse(value), null, 2) : value)); // try catch needed
+        return;
+      });
+      return true;
+    } else return false; // only let one read be active at a time -- FIXME, could do better, not sure it's worth it though..
+  }
   function _onClusterAttributeCollection(callback) {
     // options (15): {"executeIfOff":false,"coupleColorTempToLevel":false}
     // currentLevel (0): 111
@@ -220,14 +239,23 @@ const MatterControllerLibrary = (function () {
       } else return true;
     });
   }
+
+  function _endClusterAttributeCollection(cluster) {
+    const detailsText = _clusterAttributeCollectionData.details.join('\n');
+
+    // FIXME - maybe should leave any formatting to tbe done in the callback
+    if (detailsText) _clusterAttributeCollectionData.callback(_clusterAttributeCollectionData.nodeId, cluster + "\n" + detailsText);
+    _clusterAttributeCollectionData = null;
+  }
+
   function onAttributeChanged(callback) {
     _registerRegEx(_regEx.attributeChanged, (matches) => callback(matches[1], matches[3], matches[4], matches[5], matches[6]));
   }
   function onDeviceTypeListMessasge(callback) {
     _registerRegEx(_regEx.deviceTypeList, (matches) => callback(matches[1]));
   }
-  function commandInvoked(callback) {
-    _registerRegEx(_regEx.commandInvoked, (matches) => callback(matches[1]));
+  function onCommandInvoked(callback) {
+    _registerRegEx(_regEx.onCommandInvoked, (matches) => callback(matches[1]));
   }
   function onStateInformationCallback(callback) {
     _registerRegEx(_regEx.stateInformationCallback, (matches) => callback(matches[1], matches[2]));
@@ -235,9 +263,12 @@ const MatterControllerLibrary = (function () {
   function onNodeStatusCallback(callback) {
     _registerRegEx(_regEx.nodeStatus, (matches) => callback(matches[1], matches[2], matches[3]));
   }
-  function readLoglevelOnLoglevelchanged(callback) {
-    _registerRegEx(_regEx.logLevel, (matches) => callback(matches[1]));
+  function readLoglevel(callback) {
+    _registerRegEx(_regEx.logLevel, (matches) => { callback(matches[1]); return true; });
     sendCommand('config loglevel get');
+  }
+  function onLoglevelchanged(callback) {
+    _registerRegEx(_regEx.onLogLevel, (matches) => callback(matches[1]));
   }
   function readAttributesForCluster(callback) {
     _registerRegEx(_regEx.attributesForCluster, (matches) => callback(matches[2], matches[3], matches[1]));
@@ -259,26 +290,7 @@ const MatterControllerLibrary = (function () {
     _registerRegEx(/INFO\s+PairedNode [^0-9]*(\d+)\*\*\D*/, (matches, text) => { callback(matches[1], text); return true; }, { nodeId: nodeId });
     sendCommand(`node log ${nodeId}`);
   }
-  function readClusterAttributes(nodeId, endpoint, cluster, callback) {
 
-    _clusterAttributeCollectionData = { nodeId, endpoint, cluster, details: [], timeoutId: null, callback: callback };
-
-    sendCommand(`attributes ${cluster.toLowerCase()} read all ${nodeId} ${endpoint}`);
-
-    // "Done." detected and endClusterAttributeCollection called in onClusterAttributeCollection
-    _onClusterAttributeCollection((attribute, id, value) => {
-      _clusterAttributeCollectionData.details.push("  \"" + attribute + " " + id + "\": " +
-        ((value[0] === "{" || value[0] === "[") ? JSON.stringify(JSON.parse(value), null, 2) : value)); // try catch needed
-      return;
-    });
-  }
-  function _endClusterAttributeCollection(cluster) {
-    const detailsText = _clusterAttributeCollectionData.details.join('\n');
-
-    // FIXME - maybe should leave any formatting to tbe done in the callback
-    if (detailsText) _clusterAttributeCollectionData.callback(_clusterAttributeCollectionData.nodeId, cluster + "\n" + detailsText);
-    _clusterAttributeCollectionData = null;
-  }
   function _addObjectToArray(array, newObject) {
     const exists = array.some(obj => { return obj.expression.source === newObject.expression.source && obj.expression.flags === newObject.expression.flags; });
     if (!exists) array.push(newObject);
@@ -308,10 +320,11 @@ const MatterControllerLibrary = (function () {
     onCurrentSaturationChanged: onCurrentSaturationChanged,
     onAttributeChanged: onAttributeChanged,
     onDeviceTypeListMessasge: onDeviceTypeListMessasge,
-    commandInvoked: commandInvoked,
+    onCommandInvoked: onCommandInvoked,
     onStateInformationCallback: onStateInformationCallback,
     onNodeStatusCallback: onNodeStatusCallback,
-    readLoglevelOnLoglevelchanged: readLoglevelOnLoglevelchanged,
+    onLoglevelchanged: onLoglevelchanged,
+    readLoglevel: readLoglevel,
     readAttributesForCluster: readAttributesForCluster,
     onClusterClientMessage: onClusterClientMessage,
     setLevel: setLevel,

@@ -751,8 +751,6 @@
                 reconnectAttempts = 0;
                 intentionallyClosed = false;
 
-                MatterControllerLibrary.commandInvoked((callback) => { ; });
-
                 // "catch-all" for attribute changes for example when asynchronuous changes happen to a sensor
                 // For example: 17148967204303126331: Attribute undefined/3/1029/measuredValue changed to 1340  
                 MatterControllerLibrary.onAttributeChanged((nodeId, endpoint, cluster, attribute, value) => updateAttributeDisplay(nodeId, endpoint, cluster, attribute, value));
@@ -774,7 +772,8 @@
                         nodeLogCollection(nodeId, (nodeId, logData) => { processLogdata(nodeId, logData); });
                 });
 
-                MatterControllerLibrary.readLoglevelOnLoglevelchanged((level) => updateLogLevelUI(level.toLowerCase().trim()));
+                MatterControllerLibrary.readLoglevel((level) => updateLogLevelUI(level.toLowerCase().trim()));
+                MatterControllerLibrary.onLoglevelchanged((level) => updateLogLevelUI(level.toLowerCase().trim()));
 
                 MatterControllerLibrary.initializeNodes(); // aka nodes connect
             };
