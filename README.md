@@ -85,8 +85,11 @@ For example, to read the state of an OnOff device, you'd do something like: :
     MatterControllerLibrary.readOnOff(nodeId, endpoint, (value) => 
        console.log(`The device state is ${value}`
      );
+To command the OnOff device: 
 
-Or to set the intensity level of a Dimmable Light to 50% : 
+    MatterControllerLibrary.controlOnOffDevice(nodeId, endpoint, "on");
+
+To set the intensity level of a Dimmable Light to 50% : 
 
     MatterControllerLibrary.setLevel(nodeId, endpoint, 127);
 
@@ -96,4 +99,7 @@ current limitations
  - not handling events 
  - or color change other than hsv 
  - and more...
+
+
+
 

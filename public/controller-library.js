@@ -92,7 +92,7 @@ const MatterControllerLibrary = (function () {
     _logger = logger;
     _regExProcessing = [];
   }
-  function controlOnOffDevice(command, nodeId, endpoint) {
+  function controlOnOffDevice(nodeId, endpoint, command ) {
     sendCommand(`commands onoff ${command} ${nodeId} ${endpoint}`);
   }
   function idToDevice(id) {

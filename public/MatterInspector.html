@@ -459,7 +459,7 @@
             if (!commandOrCluster.includes('Unknown cluster')) {
                 if (type === "cluster")
                     button.onclick = () => MatterControllerLibrary.readClusterAttributes(nodeId, endpoint, commandOrCluster, (id, details) => showPopup(id, details, "Attributes"));
-                else button.onclick = () => MatterControllerLibrary.controlOnOffDevice(commandOrCluster, nodeId, endpoint);
+                else button.onclick = () => MatterControllerLibrary.controlOnOffDevice(nodeId, endpoint, commandOrCluster);
 
             }
             return button;
