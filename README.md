@@ -37,13 +37,63 @@ This is a minimal, single-file, standalone example showing interaction with Matt
 ![image of graphs example](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/graphexample.png)
 
 This is a minimal example showing how to generate graphs based off of Matter sensors. In reality, it is probably not all that useful as it only collects data while the page is displayed, so historic values will be lost when the page is closed.  To implement it properly, the data should be stored on the server-side and fetched when the page is loaded. This example shows Temperature, Humidity, Air pressure, Light and Electrical sensors.
- ## Details TBD
-running...
-http options...
-pairing and bluetooth capabilities...
-basic architecture, limitations, how to extend...
-examples, i.e. read attribute, react to attribute change, send command
-current limitations - not handling events, color change other than hsv...
-designed to be used as starting points for further refinement...*
 
+## Extending
+
+The last two examples are single-file standalone examples, but MatterInspector uses a small library that has a goal of simplifying interactions with the Matter Web Shell. The user of the library is responsible for the lifecycle of the websocket as far as creation, errors, messages reception, etc. 
+
+    const  protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const  host = window.location.hostname || 'localhost'; 
+    const  defaultPort = window.location.port || 80;
+    const  wsUrl = `${protocol}//${host}:${defaultPort}`;
+    ws = new  WebSocket(wsUrl);
+
+The library is responsible for processing incoming messages and executing callbacks for the main application to handle. 
+
+In order for the library to process the incoming messages, something like the following should be defined on the websocket: 
+
+    ws.onmessage = (event) => {
+       if (typeof event.data === 'string') 
+          MatterControllerLibrary.processLine(event.data);
+    };
+
+
+The following would be a typical startup sequence on websocket open:
+
+    ws.onopen = () => {
+	    // Initialize with a websocket and a log handler 
+	    MatterControllerLibrary.initControllerLibrary(ws, appendOutput);
+	    
+	    // Register for changes to attributes on all known nodes endpoints, and clusters
+	    MatterControllerLibrary.onAttributeChanged((nodeId, endpoint, cluster, attribute, value) => {...}
+	    
+	    // Register for change of status on any node 
+	    MatterControllerLibrary.onNodeStatusCallback((nodeId, status, details) => {...}
+	    
+	    // Start the ball rolling. This brings known nodes online. Node Status messages will follow
+	    MatterControllerLibrary.initializeNodes()
+	    ...
+
+When a status message of a node is reported as "connected" the main application would typically subscribe to all events and attribute changes from a node like so:
+
+    MatterControllerLibrary.nodeSubscribe(nodeId);
+
+At this point, the application should be in control with knowledge of all known nodes,  receiving all changes to those nodes and with the ability to manipulate the nodes itself.
+
+For example, to read the state of an OnOff device, you'd do something like: :
+
+    MatterControllerLibrary.readOnOff(nodeId, endpoint, (value) => 
+       console.log(`The device state is ${value}`
+     );
+
+Or to set the intensity level of a Dimmable Light to 50% : 
+
+    MatterControllerLibrary.setLevel(nodeId, endpoint, 127);
+
+ ## Details TBD
+
+current limitations
+ - not handling events 
+ - or color change other than hsv 
+ - and more...
 

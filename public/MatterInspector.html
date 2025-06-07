@@ -780,9 +780,8 @@
             //----------------------------------------------------------------------------------
             ws.onmessage = (event) => {
                 if (typeof event.data === 'string') {
-                    let text = event.data;
-                    appendOutput(`Received: ${text}`, text.toLowerCase().includes('error') ? 'error' : 'received');
-                    MatterControllerLibrary.processLine(text, event.data);
+                    appendOutput(`Received: ${event.data}`, event.data.toLowerCase().includes('error') ? 'error' : 'received');
+                    MatterControllerLibrary.processLine(event.data);
                 }
             };
             //----------------------------------------------------------------------------------

@@ -99,12 +99,12 @@ const MatterControllerLibrary = (function () {
     return _idToDevice[id] ? _idToDevice[id] : "Unknown ";
   }
 
-  function processLine(text, rawData) {
+  function processLine(line) {
     // for all of the regex expressions check and process if there is a match
     for (const element of _regExProcessing) {
-      const results = text.match(element.expression);
+      const results = line.match(element.expression);
       if (results) {
-        const shouldRemove = element.callback(results, rawData);
+        const shouldRemove = element.callback(results, line);
         if (shouldRemove) { _regExProcessing.splice(_regExProcessing.indexOf(element), 1); }
       }
     }
