@@ -40,7 +40,7 @@ This is a minimal example showing how to generate graphs based off of Matter sen
 
 ## Extending
 
-The last two examples are single-file standalone examples, but MatterInspector uses a small library that has a goal of simplifying interactions with the Matter Web Shell. The user of the library is responsible for the lifecycle of the websocket as far as creation, errors, messages reception, etc. 
+The last two examples are single-file standalone examples, but MatterInspector uses the small library, `controller-library.js` that has a goal of simplifying interactions with the Matter Web Shell. The user of the library is responsible for the lifecycle of the websocket as far as creation, errors, messages reception, etc. For example:
 
     const  protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const  host = window.location.hostname || 'localhost'; 
@@ -92,6 +92,8 @@ To command the OnOff device:
 To set the intensity level of a Dimmable Light to 50% : 
 
     MatterControllerLibrary.setLevel(nodeId, endpoint, 127);
+
+As to how to determine what kind of device(s) a node is, and what its capabilities are, at this point the burden is on the application rather than the library. Basically the application will call `MatterControllerLibrary.nodeLog`, and then parse the results to obtain details of the node. For a minimal example, see the `nodeLogCollection`and `processLogdata` functions in the MatterInspector example. To see the raw data that is returned from the `nodeLog` function, use the `Query` button in the MatterInspector example which makes the same call.
 
  ## Details TBD
 
