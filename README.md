@@ -18,9 +18,9 @@ This repository contains examples of Matter Controllers that utilize a web socke
 ![image of example selection page](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/index.png)
 
 
-Once the webshell server is running, the easiest want to get started with a Matter device, is to use one that has already been commissioned via Google/Apple/Home Assistant/etc. In the appropriate controller, locate the menu for sharing or linking the device with another app. When given a pairing code, enter it in the webshell form.  Once entered, after a short delay a visualization should pop up in the browser user interface. If it doesn't, check the console for messages.
+Once the webshell server is running, the easiest way to get started with a Matter device, is to use one that has already been commissioned via Google/Apple/Home Assistant/etc. In the appropriate controller, locate the menu for sharing or linking the device with another app. When given a pairing code, enter it in the webshell form.  Once entered, after a short delay a visualization should pop up in the browser user interface. If it doesn't, check the console for messages.
 
-If you want to commission a Matter device that hasn't already been set up, see the matter.js shell documentation regarding bluetooth libraries for your system, start the webshell with a "--ble" parameter,  and then when entering the paring code in the browser UI, add --ble, e.g. "0123456789  --ble"
+If you want to commission a Matter device that hasn't already been set up, see the matter.js shell documentation regarding Bluetooth libraries for your system, start the webshell with a "--ble" parameter,  and then when entering the pairing code in the browser UI, add --ble, e.g. "0123456789  --ble"
  
 ## MatterInspector.html
 ![image of Matter Inspector example](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/MatterExplorer.png)
@@ -36,11 +36,11 @@ This is a minimal, single-file, standalone example showing interaction with Matt
 
 ![image of graphs example](https://raw.githubusercontent.com/JimBuzbee/matter-controller/main/public/graphexample.png)
 
-This is a minimal example showing how to generate graphs based off of Matter sensors. In reality, it is probably not all that useful as it only collects data while the page is displayed, so historic values will be lost when the page is closed.  To implement it properly, the data should be stored on the server-side and fetched when the page is loaded. This example shows Temperature, Humidity, Air pressure, Light and Electrical sensors.
+This is a minimal example showing how to generate graphs based off of Matter sensors.  This example shows Temperature, Humidity, Air pressure, Light and Electrical sensors. Data is not persisted across reloads. For production, server-side storage would be used.
 
 ## Extending
 
-The last two examples are single-file standalone examples, but MatterInspector uses the small library, `controller-library.js` that has a goal of simplifying interactions with the Matter Web Shell. The user of the library is responsible for the lifecycle of the websocket as far as creation, errors, messages reception, etc. For example:
+The last two examples are single-file standalone examples. In contrast, MatterInspector uses the small library, `controller-library.js` that simplifies interactions with the Matter Web Shell. The user of the library is responsible for the lifecycle of the websocket as far as creation, opening, closing, errors and message reception. For example:
 
     const  protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const  host = window.location.hostname || 'localhost'; 
@@ -78,9 +78,9 @@ When a status message of a node is reported as "connected" the main application 
 
     MatterControllerLibrary.nodeSubscribe(nodeId);
 
-At this point, the application should be in control with knowledge of all known nodes,  receiving all changes to those nodes and with the ability to manipulate the nodes itself.
+At this point, the application should be in control with full awareness of all known nodes,  real-time updates to the nodes and with the ability to manipulate the nodes itself.
 
-For example, to read the state of an OnOff device, you'd do something like: :
+For example, to read the state of an OnOff device, you'd do something like: 
 
     MatterControllerLibrary.readOnOff(nodeId, endpoint, (value) => 
        console.log(`The device state is ${value}`
