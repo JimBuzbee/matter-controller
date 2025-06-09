@@ -89,7 +89,7 @@
             consoleContainer: document.getElementById('console-container')
         };
 
-     
+
         let commandHistory = JSON.parse(localStorage.getItem('commandHistory')) || [];
         let historyIndex = -1;
         let isUpdatingLogLevel = false;
@@ -524,19 +524,47 @@
 
             storeButtonConfig(type, nodeId, endpoint, clusterNumber, clusterName);
         }
-        //----------------------------------------------------------------------------------
-        function addClusterControlElement(nodeId, endpoint, action, clusterNumber) {
-            const node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
-            const containerClass = 'endpoint-control-container';
-            let endpointContainer = node.querySelector(`.${containerClass}-${endpoint}`);
-            const type = "control"
 
-            // if we are being asked to use an endpoint container that doesn't exist, create it
+        function addClusterControlElement(nodeId, endpoint, action, clusterNumber) {
+            const containerClass = 'endpoint-control-container';
+            let inputElement;
+
+            switch (action.toLowerCase()) {
+                case "movetocolortemperature":
+                    inputElement = createColorPicker(nodeId, endpoint);
+                    // We handle adding the associated label later
+                    break;
+
+                case "movetolevel":
+                    inputElement = createLevelSlider(nodeId, endpoint);
+                    break;
+
+                case "on":
+                case "off":
+                case "toggle":
+                    if (action === "on") { // only need to do this for one of these actions
+                        MatterControllerLibrary.readOnOff(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true"); });
+                        MatterControllerLibrary.onOnOffChanged(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true") });
+                    }
+                    inputElement = createButton(nodeId, endpoint, clusterNumber, action, "control");
+                    break;
+
+                default:
+                    // This is a command reported by the device that our UI doesn't know how to handle.
+                    console.log(`Unhandled command: ${action} for node ${nodeId}, endpoint ${endpoint}, cluster ${clusterNumber}`);
+                    break;
+            }
+
+            if (!inputElement) return;
+
+            let endpointContainer = document.querySelector(`.node[data-node-id="${nodeId}"] .${containerClass}-${endpoint}`);
+
             if (!endpointContainer) {
+                // The container doesn't exist, so create it and add it to the DOM.
+                const node = document.querySelector(`.node[data-node-id="${nodeId}"]`);
                 const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
                 const deviceType = aliases[`${nodeId}/${endpoint}/commandType`] || '';
-
-                endpointContainer = createEndpointContainer(nodeId, endpoint, type, containerClass, deviceType);
+                endpointContainer = createEndpointContainer(nodeId, endpoint, "control", containerClass, deviceType);
 
                 // first look for other endpoint containers 
                 let position = node.getElementsByClassName('control-container')[0];
@@ -547,33 +575,15 @@
 
             const inputsWrapper = endpointContainer.querySelector('.node-buttons');
 
-            let inputElement;
-
-            if (action === "movetocolortemperature") {
-                inputElement = createColorPicker(nodeId, endpoint);
-                if (inputElement) inputsWrapper.appendChild(createColorLabel(nodeId, endpoint));
-            } else if (action == "movetolevel") inputElement = createLevelSlider(nodeId, endpoint);
-            else {
-                // only need to do this once although action could be on, off, toggle
-                if (action === "on") {
-                    // set the current state (on or off)
-                    MatterControllerLibrary.readOnOff(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true"); });
-
-                    // register to get callback whenever it changes
-                    MatterControllerLibrary.onOnOffChanged(nodeId, endpoint, (value) => { updateNodeState(nodeId, endpoint, value === "true") });
-                }
-                // assume button, but if support is added for different types - will need to update here
-                inputElement = createButton(nodeId, endpoint, clusterNumber, action, type); // on, off, toggle
+            // Special case for color picker, which has a separate label
+            if (action.toLowerCase() === "movetocolortemperature") {
+                inputsWrapper.appendChild(createColorLabel(nodeId, endpoint));
             }
 
-            // elmement wasn't created so probably already exists, bail out - FIXME could we determine this earlier?
-            if (!inputElement) return;
-
             inputsWrapper.appendChild(inputElement);
-
-            storeButtonConfig(type, nodeId, endpoint, clusterNumber, action, action);
+            storeButtonConfig("control", nodeId, endpoint, clusterNumber, action, action);
         }
-        //----------------------------------------------------------------------------------
+         //----------------------------------------------------------------------------------
         function nodeLogCollection(nodeId, callback) {
 
             const logData = nodeLogs.get(nodeId); // see if we have already collected this node's log data
@@ -583,6 +593,7 @@
                 return;
             }
             // keep track of log level so we can restore it later
+            // FIXME - This changing of the log level is a bit of a hack - this detail should be handled by the controller library
             originalLogLevel = domElements.logLevelSelect.value || "error";
             MatterControllerLibrary.configLoglevel("info"); // need to have info level to get the log lines we want
 
@@ -685,60 +696,43 @@
         }
         //----------------------------------------------------------------------------------
         function processLogdata(nodeId, logData) {
-            nodeLogs.set(nodeId, logData); // save the log text
-            MatterControllerLibrary.configLoglevel(originalLogLevel);
-            let currentNode = nodeId;
-            let currentEndpoint = -1;
-            let currentClusterNumber = -1;
+            nodeLogs.set(nodeId, logData); // Save the raw log text
+            MatterControllerLibrary.configLoglevel(originalLogLevel); // Restore log level
 
-            if (logData === null || logData === undefined) return;
+            const nodeData = MatterControllerLibrary.parseNodeLogData(logData);
+            console.log(JSON.stringify(nodeData, null, 2));
+ 
+            for (const endpointId in nodeData.endpoints) {
+                const endpoint = nodeData.endpoints[endpointId];
 
-            // process line by line - could consider building a complete data struct, but we only use a few lines
-            logData.split('\n').forEach(line => {
+                if (endpoint.deviceTypes.length > 0) {
+                    const label = endpoint.deviceTypes.map(dt => dt.name).join(' ');
 
-                matches = line.match(/ MA-[\w*]+ endpoint#: (\d+) type: MA-([\w*]+) \(([^)]+)\)/);
-                if (matches) { currentEndpoint = matches[1]; currentEndpointType = matches[2]; }
+                    //  Update the label for the endpoint's device type in the UI
+                    let labelSlot = document.getElementById(`${nodeId}/${endpointId}/deviceType`);
+                    if (labelSlot) labelSlot.textContent = label;
 
-                // for example:  LevelControl id: 0x8 rev: 5
-                matches = line.match(/^ {8,9}(.+?) id: (0x[0-9a-fA-F]+) rev: (\d+)/);
-                if (matches) {
-                    const clusterName = matches[1].replace(/\*/g, '');
-                    currentClusterNumber = +matches[2]; // comes as hex so have to explicitly convert to number
-                    addEndpointClusterButton(nodeId, currentEndpoint, clusterName, currentClusterNumber);
+                    // There may also be a command container
+                    labelSlot = document.getElementById(`${nodeId}/${endpointId}/commandType`);
+                    if (labelSlot) labelSlot.textContent = label;
+
+                    // Store the device types for the endpoint in localStorage
+                    const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
+                    const updatedAliases = { ...aliases };
+                    updatedAliases[`${nodeId}/${endpointId}/deviceType`] = label;
+                    updatedAliases[`${nodeId}/${endpointId}/commandType`] = label;
+                    localStorage.setItem('nodeAliases', JSON.stringify(updatedAliases));
                 }
+                for (const clusterId in endpoint.clusters) {
+                    const cluster = endpoint.clusters[clusterId];
 
-                // commands that we know how to create a UI for - potentially could be more
-                matches = line.match(/( toggle$| on$| off$| moveToLevel$| moveToColorTemperature$)/);
-                if (matches) addClusterControlElement(currentNode, currentEndpoint, matches[1].toLowerCase().trim(), currentClusterNumber);
+                    // Add the button for the cluster itself (to read attributes)
+                    addEndpointClusterButton(nodeId, endpointId, cluster.name, +clusterId);
 
-                // get the device type list for the endpoint so we can didplay names
-                matches = line.match(/deviceTypeList id: 0x0 val: ((\{.*?\})(?:\s*\{.*?\})*)/);
-                if (matches) {
-                    const deviceTypeList = line.match(/{[^{}]*}/g);
-                    if (deviceTypeList.length > 0) {
-                        let label = "";
-                        deviceTypeList.forEach((device) => {
-                            let id = device.match(/deviceType: (\d+)/);
-                            label += MatterControllerLibrary.idToDevice(id[1]) + " ";
-                        });
-
-                        //  update the label for the endpoint's device type
-                        let labelSlot = document.getElementById(`${currentNode}/${currentEndpoint}/deviceType`);
-                        if (labelSlot) labelSlot.textContent = label;
-
-                        // there may also be a command container
-                        labelSlot = document.getElementById(`${currentNode}/${currentEndpoint}/commandType`);
-                        if (labelSlot) labelSlot.textContent = label;
-
-                        // store the device types for the endpoint in localStorage
-                        const aliases = JSON.parse(localStorage.getItem('nodeAliases') || '{}');
-                        const updatedAliases = { ...aliases };
-                        updatedAliases[`${currentNode}/${currentEndpoint}/deviceType`] = label;
-                        updatedAliases[`${currentNode}/${currentEndpoint}/commandType`] = label;
-                        localStorage.setItem('nodeAliases', JSON.stringify(updatedAliases));
-                    }
+                    // Add the UI elements for each command in that cluster
+                    cluster.commands.forEach(command => addClusterControlElement(nodeId, endpointId, command, +clusterId));
                 }
-            }) // end for each line in log data
+            }
         }
         //----------------------------------------------------------------------------------
         function setupWebSocket() {

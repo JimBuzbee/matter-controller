@@ -296,6 +296,81 @@ const MatterControllerLibrary = (function () {
     if (!exists) array.push(newObject);
   }
 
+  function parseNodeLogData(logData) {
+    const nodeStructure = {
+        endpoints: {}
+    };
+
+    if (!logData) return nodeStructure;
+
+    let currentEndpointId = -1;
+    let currentClusterId = -1;
+
+    logData.split('\n').forEach(line => {
+        let matches;
+
+        // Match Endpoint: "MA-server-cluster endpoint#: 1 type: MA-bridged-device (0x13)"
+        matches = line.match(/ MA-[\w*]+ endpoint#: (\d+) type: MA-([\w*]+) \(([^)]+)\)/);
+        if (matches) {
+            currentEndpointId = matches[1];
+            if (!nodeStructure.endpoints[currentEndpointId]) {
+                // Initialize the endpoint object if it doesn't exist
+                nodeStructure.endpoints[currentEndpointId] = {
+                    deviceTypes: [],
+                    clusters: {}
+                };
+            }
+        }
+
+        // Match Cluster: "        OnOff id: 0x6 rev: 4"
+        matches = line.match(/^ {8,9}(.+?) id: (0x[0-9a-fA-F]+) rev: (\d+)/);
+        if (matches && currentEndpointId !== -1) {
+            const clusterName = matches[1].replace(/\*/g, '').trim();
+            const clusterId = +matches[2]; // Convert hex string to number
+            currentClusterId = clusterId;
+
+            if (!nodeStructure.endpoints[currentEndpointId].clusters[clusterId]) {
+                 // Initialize the cluster object
+                nodeStructure.endpoints[currentEndpointId].clusters[clusterId] = {
+                    name: clusterName,
+                    id: clusterId,
+                    commands: []
+                };
+            }
+        }
+
+        // Match Commands: "          off"
+        // note that this is an incomplete list of commands, but it is what we currently can handle
+        matches = line.match(/^\s{14,}(\w+)$/);  // maches words indented by 14 spaces - not likely best way to do it
+        if (matches && currentEndpointId !== -1 && currentClusterId !== -1) {
+            const command = matches[1].toLowerCase().trim();
+            // Ensure the cluster exists before trying to add a command
+            if (nodeStructure.endpoints[currentEndpointId].clusters[currentClusterId]) {
+                nodeStructure.endpoints[currentEndpointId].clusters[currentClusterId].commands.push(command);
+            }
+        }
+
+        // Match Device Type List
+        matches = line.match(/deviceTypeList id: 0x0 val: ((\{.*?\})(?:\s*\{.*?\})*)/);
+        if (matches && currentEndpointId !== -1) {
+            nodeStructure.endpoints[currentEndpointId].deviceTypes = [];
+            const deviceTypeList = line.match(/{[^{}]*}/g) || [];
+            deviceTypeList.forEach((device) => {
+                const idMatch = device.match(/deviceType: (\d+)/);
+                if (idMatch) {
+                    const deviceId = parseInt(idMatch[1]);
+                    const deviceName = _idToDevice[deviceId] || "Unknown Device";
+                    nodeStructure.endpoints[currentEndpointId].deviceTypes.push({
+                        id: '0x' + deviceId.toString(16).padStart(4, '0'), // Store consistently as hex string
+                        name: deviceName
+                    });
+                }
+            });
+        }
+    });
+
+    return nodeStructure;
+}
   return {
     idToDevice: idToDevice,
     initControllerLibrary: initControllerLibrary,
@@ -331,6 +406,7 @@ const MatterControllerLibrary = (function () {
     configLoglevel: configLoglevel,
     nodeStatus: nodeStatus,
     nodeLog: nodeLog,
-    readClusterAttributes: readClusterAttributes
+    readClusterAttributes: readClusterAttributes,
+    parseNodeLogData: parseNodeLogData
   }
 })();

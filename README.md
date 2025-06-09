@@ -93,7 +93,7 @@ To set the intensity level of a Dimmable Light to 50% :
 
     MatterControllerLibrary.setLevel(nodeId, endpoint, 127);
 
-As to how to determine what kind of device(s) a node is, and what its capabilities are, at this point the burden is on the application rather than the library. Basically the application will call `MatterControllerLibrary.nodeLog`, and then parse the results to obtain details of the node. For a minimal example, see the `nodeLogCollection`and `processLogdata` functions in the MatterInspector example. To see the raw data that is returned from the `nodeLog` function, use the `Query` button in the MatterInspector example which makes the same call.
+To determine what kind of device(s) a node is, and what its capabilities are, basic information can be first found by calling `MatterControllerLibrary.nodeLog` and then calling `MatterControllerLibrary.parseNodeLogData` to parse the result into a minimal data structure.  For now, the burden is on the application rather than the library to get  more detailed information from the log data.  For an example, see the `nodeLogCollection`and `processLogdata` functions in the MatterInspector example. To see the extensive raw data that is returned from the `nodeLog` function, use the `Query` button in the MatterInspector example which makes the same call.
 
  ## Details TBD
 
