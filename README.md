@@ -80,7 +80,14 @@ When a status message of a node is reported as "connected" the main application 
 
 At this point, the application should be in control with full awareness of all known nodes,  real-time updates to the nodes and with the ability to manipulate the nodes itself.
 
-For example, to read the state of an OnOff device, you'd do something like: 
+For example, to react to a change in Hue on an extended color light:
+
+    MatterControllerLibrary.onCurrentHueChanged(nodeId, endpoint, (value) => {
+    	console.log(`${nodeId}/${endpoint} Hue changed to ${value}`);
+    	...
+    	});
+
+To read the state of an OnOff device, you'd do something like: 
 
     MatterControllerLibrary.readOnOff(nodeId, endpoint, (value) => 
        console.log(`The device state is ${value}`
