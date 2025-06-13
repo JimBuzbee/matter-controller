@@ -524,7 +524,7 @@
 
             storeButtonConfig(type, nodeId, endpoint, clusterNumber, clusterName);
         }
-
+        //----------------------------------------------------------------------------------
         function addClusterControlElement(nodeId, endpoint, action, clusterNumber) {
             const containerClass = 'endpoint-control-container';
             let inputElement;
@@ -551,7 +551,7 @@
 
                 default:
                     // This is a command reported by the device that our UI doesn't know how to handle.
-                    console.log(`Unhandled command: ${action} for node ${nodeId}, endpoint ${endpoint}, cluster ${clusterNumber}`);
+                    // console.log(`Unhandled command: ${action} for node ${nodeId}, endpoint ${endpoint}, cluster ${clusterNumber}`);
                     break;
             }
 
@@ -700,7 +700,7 @@
             MatterControllerLibrary.configLoglevel(originalLogLevel); // Restore log level
 
             const nodeData = MatterControllerLibrary.parseNodeLogData(logData);
-            console.log(JSON.stringify(nodeData, null, 2));
+            //console.log(JSON.stringify(nodeData, null, 2));
  
             for (const endpointId in nodeData.endpoints) {
                 const endpoint = nodeData.endpoints[endpointId];
